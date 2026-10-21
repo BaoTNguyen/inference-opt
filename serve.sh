@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # One vLLM server; every knob is an env var so sweep.sh can A/B them.
-#   ./serve.sh                          the measured best: Qwen3.8-27B, TP=2, MTP k=3, one client
+#   ./serve.sh                          the measured best: Qwen3.8-27B, TP=2, MTP k=3, Triton + full graphs + BF16 KV
+#   ATTN= CG= KV= ./serve.sh            the earlier best: vLLM's picks (FlashInfer, piecewise graphs, FP8 KV)
 #   K=1 ./serve.sh                      keep K in 1-3: each beat k=0 on every speed metric at one client (k=4 lost to k=3)
 #   M=nemo TP=1 K=0 GPU=1 PORT=8002 ./serve.sh   one replica per card (sweep.sh DP=2); no MTP head in that checkpoint
 #   ATTN=TRITON_ATTN CG=FULL_AND_PIECEWISE KV=bfloat16 ./serve.sh   full CUDA graphs with MTP (FlashInfer can't, so
@@ -16,7 +17,10 @@ case $M in
   # 25 GB, needs TP=2; skip the vision tower
   qwen) W=cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit; EXTRA=(--reasoning-parser qwen3 --language-model-only) ;;
   # smartest that fits: dense hybrid, 19 GB INT4 (ships an FP8 KV scheme), has MTP. Already downloaded.
-  q27) W=$HOME/models/qwen3.8-27b/int4; EXTRA=(--reasoning-parser qwen3 --language-model-only) ;;
+  # measured best (2026-10-21): Triton + full CUDA graphs + BF16 KV beat FlashInfer + piecewise + FP8 KV, 89.6 vs 84.1 tok/s.
+  # Set ATTN= CG= KV= (empty) to get vLLM's own picks back.
+  q27) W=$HOME/models/qwen3.8-27b/int4; EXTRA=(--reasoning-parser qwen3 --language-model-only)
+       : "${ATTN=TRITON_ATTN}" "${CG=FULL_AND_PIECEWISE}" "${KV=bfloat16}" ;;
   *) echo "unknown M=$M"; exit 1 ;;
 esac
 [ "$TP" -gt 1 ] && GPU=$(seq -s, 0 $((TP - 1)))

@@ -4,11 +4,11 @@ The goal is the highest output tokens per minute (TPM) for the smartest model th
 
 ## Best result
 
-| Model | Engine | Parallelism | Speculation | tok/s p50 | tok/s p5 | TTFT p50 | TTFT p95 | TPM | Errors | Gate |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Qwen3.8-27B INT4 | vLLM 0.27.1 | TP=2 | MTP k=3 | **84.1** | 72.6 | 0.145 s | 0.599 s | **4,968** | 0 / 40 | PASS |
+| Model | Engine | Parallelism | Speculation | Attention / CUDA graphs / KV | tok/s p50 | tok/s p5 | TTFT p50 | TTFT p95 | TPM | Errors | Gate |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Qwen3.8-27B INT4 | vLLM 0.27.1 | TP=2 | MTP k=3 | Triton / full + piecewise / BF16 | **89.6** | 76.4 | 0.145 s | 0.584 s | **5,229** | 0 / 40 | PASS |
 
-Label `q27-tp2-k3` in `results/summary.jsonl`. 40 requests produced 35,613 output tokens in 430 s. Accuracy for this config is still pending (see [Pending](#pending)).
+Label `q27-k3-triton-full-bf16kv` in `results/summary.jsonl`. 40 requests produced 36,058 output tokens in 414 s. This is `serve.sh`'s default. The previous best, with vLLM's own picks (FlashInfer, piecewise graphs, FP8 KV), ran at 84.1 tok/s and 4,968 TPM (see [Attention backend and CUDA graphs](#attention-backend-and-cuda-graphs)). Accuracy for this config is still pending (see [Pending](#pending)).
 
 ## Hardware
 
@@ -42,7 +42,9 @@ Set in `serve.sh`:
 | Chat template | `enable_thinking: true`, `--reasoning-parser qwen3`, `--language-model-only` (vision tower skipped) |
 | Env | `VLLM_USE_FLASHINFER_SAMPLER=0` (the FlashInfer sampler JIT fails with the system nvcc 12.0) |
 
-Resolved by vLLM itself, from `results/server-q27-tp2-k3-0.log`:
+`serve.sh` now also sets `--attention-backend TRITON_ATTN`, `--compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}'` and `--kv-cache-dtype bfloat16` for this model by default, which is the best result. `ATTN= CG= KV= ./serve.sh` drops them.
+
+Resolved by vLLM itself for the earlier best (vLLM's own picks), from `results/server-q27-tp2-k3-0.log`:
 
 - Quantization: compressed-tensors, `MarlinLinearKernel` for the W4A16 layers.
 - KV cache: FP8 (`float8_e4m3fn`), from the checkpoint's own KV scheme. 262,856 tokens of KV capacity.
@@ -118,6 +120,17 @@ Qwen3.8-27B INT4, vLLM 0.27.1, TP=2, one client, 40 requests each.
 
 k=4 lost to k=3 on decode speed and TPM: acceptance drops faster than the extra draft token pays. The k=0 run had median busy SM clocks of 1365 / 1230 MHz (GPU0 / GPU1), against 1530-1575 / 1395-1455 MHz for k=1-4, about 11-15% lower. Part of the k=0 to k=1 gain may be clock. Decode at one client is bandwidth-bound, so probably a small part.
 
+### Attention backend and CUDA graphs
+
+MTP k=3, one client, 40 requests each. With MTP on, vLLM picks FlashInfer and drops to piecewise CUDA graphs, because FlashInfer can't capture full graphs with speculative decoding. Triton attention can, but it can't read an FP8 KV cache on a 3090 (sm_86), so it runs with BF16 KV.
+
+| Attention / CUDA graphs / KV | TTFT p50 | TTFT p95 | tok/s p50 | tok/s p5 | Accepted per drafted | TPM | Gate |
+|---|---|---|---|---|---|---|---|
+| FlashInfer / piecewise / FP8 (vLLM's picks) | 0.145 | 0.599 | 84.1 | 72.6 | 0.531 | 4,968 | PASS |
+| **Triton / full + piecewise / BF16** | 0.145 | 0.584 | **89.6** | 76.4 | 0.523 | **5,229** | PASS |
+
++6.5% at p50, +5.2% on the slow tail and +5.3% TPM. The log confirms full decode graphs were captured (`Capturing CUDA graphs (decode, FULL)`). Median busy SM clocks were slightly lower in the Triton run (1470 / 1350 MHz against 1530 / 1395), so the gain isn't clock. Three settings changed together, so the gain can't be split between them. Full graphs cutting per-step launch overhead at batch 1 is the likely main cause.
+
 ### Per-request spread, k=3
 
 From `results/raw/q27-tp2-k3-chat-c1-113621.jsonl` (raw files are gitignored):
@@ -136,8 +149,8 @@ In the sibling project [inference-explainer](../inference-explainer), the same d
 
 ## Pending
 
-- **Accuracy eval of the k=3 config.** Two attempts failed before scoring. The first crashed because IFEval needed `langdetect` (`eval.sh` now installs `lm-eval[api,ifeval]`). In the second, the stock `gsm8k_cot_zeroshot` stop sequence `"Q:"` fired inside the model's thinking and cut answers off, and at 4 requests in flight the vLLM server crashed with `cudaErrorIllegalAddress` on GPU 1 while building FlashInfer attention metadata under MTP. The benchmark, which sends one request at a time, never hit this. The rerun (`q27-k3`, 100 questions per task) uses `tasks/gsm8k_think.yaml` (the same task without stop sequences) and one request at a time, matching the benchmark. Scores will land in `results/eval/q27-k3/`.
-- **Triton attention with full CUDA graphs.** The first run (`q27-k3-triton-full`) failed at startup: `FP8 KV cache is not supported by the Triton attention backend on NVIDIA GeForce RTX 3090 (compute capability 8.6); native FP8 (fp8e4nv) requires SM89+. Re-run with --kv-cache-dtype bfloat16.` A retry with `KV=bfloat16` (`q27-k3-triton-full-bf16kv`) is running. It changes three things at once (attention backend, CUDA graph mode, KV dtype), so any difference from the best result can't be pinned on one of them.
+- **Accuracy eval of the k=3 config.** Two attempts failed before scoring. The first crashed because IFEval needed `langdetect` (`eval.sh` now installs `lm-eval[api,ifeval]`). In the second, the stock `gsm8k_cot_zeroshot` stop sequence `"Q:"` fired inside the model's thinking and cut answers off, and at 4 requests in flight the vLLM server crashed with `cudaErrorIllegalAddress` on GPU 1 while building FlashInfer attention metadata under MTP. The benchmark, which sends one request at a time, never hit this. The rerun (`q27-k3`, 100 questions per task) uses `tasks/gsm8k_think.yaml` (the same task without stop sequences) and one request at a time, matching the benchmark. It now runs on the new best config, as `q27-best`, and scores will land in `results/eval/q27-best/`.
+- **Triton attention with full CUDA graphs:** done, now the best result (above). The first attempt failed at startup because Triton can't read FP8 KV on sm_86. The retry used BF16 KV.
 - **SGLang EXL3 run** (`exl3-k3`), queued behind the weight download and image pull.
 
 ## Files
