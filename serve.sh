@@ -1,32 +1,37 @@
 #!/usr/bin/env bash
 # One vLLM server; every knob is an env var so sweep.sh can A/B them.
-#   ./serve.sh                          the measured best: Qwen3.8-27B, TP=2, MTP k=3, Triton + full graphs + BF16 KV
-#   ATTN= CG= KV= ./serve.sh            the earlier best: vLLM's picks (FlashInfer, piecewise graphs, FP8 KV)
-#   K=1 ./serve.sh                      keep K in 1-3: each beat k=0 on every speed metric at one client (k=4 lost to k=3)
+#   ./serve.sh                          the measured best: Qwen3.8-27B, TP=2, DFlash2 block drafting (7 tokens),
+#                                       Triton + full CUDA graphs + BF16 KV, on vLLM 0.32 (6,967 TPM)
+#   SPEC=mtp ./serve.sh                 the model's own MTP head instead (2 draft tokens; keep K in 1-3 for MTP)
+#   ATTN= CG= KV= ./serve.sh            vLLM's own picks (FlashInfer, piecewise graphs, FP8 KV)
+#   VLLM=vllm SPEC=mtp ./serve.sh       the system vLLM 0.27.1 (DFlash2 needs >= 0.32)
 #   M=nemo TP=1 K=0 GPU=1 PORT=8002 ./serve.sh   one replica per card (sweep.sh DP=2); no MTP head in that checkpoint
-#   ATTN=TRITON_ATTN CG=FULL_AND_PIECEWISE KV=bfloat16 ./serve.sh   full CUDA graphs with MTP (FlashInfer can't, so
-#                                       vLLM drops to PIECEWISE; Triton can't read FP8 KV on a 3090, so BF16 KV)
 # SEQS = max concurrent sequences, BATCH = chunked-prefill token budget per step (TTFT vs decode trade)
-# ATTN = attention backend (unset: vLLM picks, FlashInfer here), CG = cudagraph_mode NONE|PIECEWISE|FULL|FULL_DECODE_ONLY|FULL_AND_PIECEWISE (unset: vLLM picks)
-# ponytail: K defaults to 3 for one client only; MTP cost 16% of throughput at 16 clients (inference-explainer), re-sweep K with concurrency
-M=${M:-q27}; TP=${TP:-2}; GPU=${GPU:-0}; PORT=${PORT:-8001}; K=${K:-3}; THINK=${THINK:-true}
+# ATTN = attention backend, CG = cudagraph_mode NONE|PIECEWISE|FULL|FULL_DECODE_ONLY|FULL_AND_PIECEWISE (empty: vLLM picks)
+# ponytail: speculation defaults are for one client only; MTP cost 16% of throughput at 16 clients (inference-explainer),
+# and batched MTP crashed vLLM 0.27.1 (cudaErrorIllegalAddress). Re-measure before adding concurrency.
+M=${M:-q27}; TP=${TP:-2}; GPU=${GPU:-0}; PORT=${PORT:-8001}; K=${K:-}; THINK=${THINK:-true}
 SEQS=${SEQS:-4}; BATCH=${BATCH:-4096}; UTIL=${UTIL:-0.86}; LEN=${LEN:-16384}
 case $M in
   # 17.8 GB, fits one card; 6 attention layers x 2 KV heads, so KV is tiny. Checkpoint has no MTP head.
   nemo) W=useful-quants/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-W4A16; EXTRA=(--reasoning-parser nemotron_v3) ;;
   # 25 GB, needs TP=2; skip the vision tower
   qwen) W=cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit; EXTRA=(--reasoning-parser qwen3 --language-model-only) ;;
-  # smartest that fits: dense hybrid, 19 GB INT4 (ships an FP8 KV scheme), has MTP. Already downloaded.
-  # measured best (2026-10-21): Triton + full CUDA graphs + BF16 KV beat FlashInfer + piecewise + FP8 KV, 89.6 vs 84.1 tok/s.
-  # Set ATTN= CG= KV= (empty) to get vLLM's own picks back.
+  # smartest that fits: dense hybrid, 19 GB INT4 (ships an FP8 KV scheme), has MTP. Measured best (2026-10-21):
+  # DFlash2 on vLLM 0.32 (6,967 TPM) > MTP k=2 on 0.32 (5,470) > MTP k=2 on 0.27.1 (5,294); Triton + full CUDA
+  # graphs + BF16 KV beat vLLM's picks by 6.5%. Set any of these to empty to drop it.
   q27) W=$HOME/models/qwen3.8-27b/int4; EXTRA=(--reasoning-parser qwen3 --language-model-only)
-       : "${ATTN=TRITON_ATTN}" "${CG=FULL_AND_PIECEWISE}" "${KV=bfloat16}" ;;
+       : "${ATTN=TRITON_ATTN}" "${CG=FULL_AND_PIECEWISE}" "${KV=bfloat16}" "${SPEC=dflash}"
+       : "${DRAFT=$HOME/models/qwen3.8-27b/dflash2}" "${VLLM=$HOME/venvs/vllm032/bin/vllm}" ;;
   *) echo "unknown M=$M"; exit 1 ;;
 esac
 [ "$TP" -gt 1 ] && GPU=$(seq -s, 0 $((TP - 1)))
-# SPEC=mtp (default, the model's own head) or SPEC=dflash with DRAFT=<draft model dir> (block drafter, K tokens per
-# pass; z-lab DFlash2 suggests K=7). DFlash2 needs vLLM >= 0.32 (VLLM=~/venvs/vllm032/bin/vllm).
+# SPEC=mtp (the model's own head, K=2 default) or SPEC=dflash with DRAFT=<draft model dir> (block drafter, K=7 default,
+# z-lab DFlash2). DFlash2 needs vLLM >= 0.32 and JIT-compiles a top-k kernel on first start, which fails with the
+# system nvcc 12.0, so it uses CUDA 13.1 when installed.
 SPEC=${SPEC:-mtp}; DRAFT=${DRAFT:-}
+[ -z "$K" ] && { [ "$SPEC" = dflash ] && K=7 || K=2; }
+[ "$SPEC" = dflash ] && [ -d /usr/local/cuda-13.1 ] && export CUDA_HOME=/usr/local/cuda-13.1 PATH=/usr/local/cuda-13.1/bin:$PATH
 if [ "$K" -gt 0 ]; then
   if [ "$SPEC" = dflash ]; then
     [ -n "$DRAFT" ] || { echo "SPEC=dflash needs DRAFT=<dir>"; exit 1; }

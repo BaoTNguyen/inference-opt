@@ -1,6 +1,14 @@
 # What each setting contributed
 
-The best run decodes at 89.2 tok/s per request and 5,294 TPM. The same model and engine with no tuning did 62.5 tok/s and 3,703 TPM. This file explains where the +43% came from, what limits the rest, and which ideas didn't pay off. The numbers are from [RUNS.md](RUNS.md).
+The best run decodes at 121.6 tok/s per request and 6,967 TPM. The same model and engine with no tuning did 62.5 tok/s and 3,703 TPM. This file explains where the +88% came from, what limits the rest, and which ideas didn't pay off. The numbers are from [RUNS.md](RUNS.md).
+
+| Step | tok/s p50 | TPM | Change in TPM |
+|---|---|---|---|
+| Untuned: vLLM 0.27.1, TP=2, no drafting | 62.5 | 3,703 | |
+| + MTP drafting, 2-3 tokens | 81.4-84.1 | 4,725-4,968 | +28-34% |
+| + Triton attention, full CUDA graphs, BF16 KV | 89.2 | 5,294 | +7% |
+| + vLLM 0.32.0 | 92.2 | 5,470 | +3% |
+| + DFlash2 block drafting instead of MTP | **121.6** | **6,967** | **+27%** |
 
 ## The frame: one request, so speed per step is everything
 
@@ -53,7 +61,24 @@ Measured effect at the same draft count: step time fell from 28.0 to 25.5 ms (k=
 
 ## 5. Two draft tokens instead of three
 
-With full graphs, 2 and 3 draft tokens tie: 89.2 vs 89.7 tok/s, and 5,294 vs 5,278 TPM, within the ~1% run-to-run noise. Two has the **better slow tail**: 82.0 vs 77.1 tok/s at p5. On text where drafts are mostly rejected, a third draft token is pure cost. The gate is about the slow requests, so the claimed config uses 2.
+With full graphs, 2 and 3 draft tokens tie: 89.2 vs 89.7 tok/s, and 5,294 vs 5,278 TPM, within the ~1% run-to-run noise. Two has the **better slow tail**: 82.0 vs 77.1 tok/s at p5. On text where drafts are mostly rejected, a third draft token is pure cost. The gate is about the slow requests, so the MTP configuration uses 2. The best result replaced MTP with DFlash2 (section 7).
+
+## 6. vLLM 0.32: +3%
+
+The same MTP configuration went from 89.2 to 92.2 tok/s (5,294 to 5,470 TPM) on vLLM 0.32.0, at slightly lower clocks. That's above the ~1% run-to-run noise. The gain likely comes from kernel and scheduler improvements between versions. It wasn't broken down further, because the main reason for upgrading was DFlash2.
+
+## 7. DFlash2 block drafting: +27%, the second-biggest gain
+
+MTP's limit (section 3) is that it drafts **one token per pass**, and each pass costs 3-5 ms, so drafting more than 2-3 tokens stops paying. DFlash2 is a separate 5-layer draft model (3.85 GB, BF16) trained for this exact model. It reads hidden states from five of the main model's layers and proposes a **block of 7 tokens in a single pass**. The full model then checks all 7 at once, as with MTP.
+
+| Drafter (vLLM 0.32) | Accepted per drafted | Tokens per step | ms per step | tok/s |
+|---|---|---|---|---|
+| MTP, 2 tokens | 0.630 | 2.26 | 24.5 | 92.2 |
+| DFlash2, 7 tokens | 0.335 | 3.35 | 27.5 | 121.6 |
+
+DFlash2 guesses worse per token (a third of its drafts are accepted, against nearly two thirds for MTP), but it makes 7 guesses for about +3 ms of step time instead of 2. So each step yields **48% more tokens for 13% more time**. Because the full model verifies every token, output at temperature 0 is the same as without drafting. The accuracy suite agrees: GSM8K 99% and IFEval 91%, against 99% and 89% with MTP.
+
+The draft model's memory leaves 93,762 tokens of KV cache, against 201,523 with MTP, still far more than a 16k chat needs. The DFlash2 run happened at 9-12% higher clocks than its baseline. Decode is bandwidth-bound, so that's a small share of the 27%, but it's worth a repeat at matched clocks before quoting the number to one decimal.
 
 ## Settings that don't move the number
 
@@ -70,14 +95,15 @@ TTFT p95 is 0.58-0.60 s in every vLLM config, with p50 at 0.11-0.15 s. The tail 
 
 | Limit | Size | What would remove it |
 |---|---|---|
-| All-reduce through host memory (no P2P) | ~7 ms of the 25.5 ms step (estimate) | An NVLink bridge between the 3090s (stock drivers block GeForce P2P over PCIe) |
-| Drafting one token at a time | ~3-5 ms per draft token | A block drafter such as DFlash2, which drafts 7-8 tokens in one pass (queued, vLLM 0.32) |
+| All-reduce through host memory (no P2P) | ~7 ms of the 27.5 ms step (estimate) | An NVLink bridge between the 3090s (stock drivers block GeForce P2P over PCIe) |
+| Draft acceptance | DFlash2 accepts 33.5% of its 7 drafts on chat (about 3.3 tokens per step) | Draft models trained on chat-like data, or tuning the block size (7 was the model card's default, not swept here) |
 | 225 W cap | Bandwidth-bound decode loses little; compute-bound engines lose a lot (EXL3) | Out of scope by choice |
 | One request at a time | TPM = one stream's speed | Concurrency (batching or two replicas), out of scope |
 
 ## What didn't pay off
 
 - **EXL3 3.0 bpw on SGLang, one GPU:** 67.3 tok/s against the registry's ~135-139. Unpacking 3-bit EXL3 weights is compute-heavy, so on one 225 W card the clock fell to 915 MHz. The SGLang fork can't split EXL3 across GPUs.
-- **4 draft tokens:** lower acceptance, higher cost; see section 3.
+- **4 MTP draft tokens:** lower acceptance, higher cost; see section 3.
+- **EXL3 on two GPUs through TabbyAPI:** 72.6 tok/s, but TTFT p95 of 1.12 s failed the gate. The SGLang fork can't run EXL3 across GPUs at all.
 - **Triton with the FP8 KV cache:** not supported on sm_86; BF16 was required.
 - **Strata / Flash-Next:** loading locks ~30 GB of RAM and triggered systemd-oomd on this 48 GB VM.

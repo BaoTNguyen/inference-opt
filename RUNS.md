@@ -38,7 +38,7 @@ Triton, full + piecewise graphs, BF16 KV (the `serve.sh` default for this model 
 |---|---|---|---|---|---|---|---|---|---|
 | `q27-k3-triton-full-bf16kv` | 3 | 0.145 | 0.584 | 89.6 | 76.4 | 0.523 | 5,229 | 1470/1350 | PASS |
 | `q27-best-k3` (repeat) | 3 | 0.144 | 0.576 | 89.7 | 77.1 | 0.523 | 5,278 | 1455/1335 | PASS |
-| **`q27-best-k2`** (best) | **2** | 0.137 | 0.586 | 89.2 | **82.0** | 0.635 | **5,294** | 1485/1365 | PASS |
+| **`q27-best-k2`** (best on 0.27.1) | **2** | 0.137 | 0.586 | 89.2 | **82.0** | 0.635 | **5,294** | 1485/1365 | PASS |
 
 Run-to-run variation, from the repeat: 0.2% at p50, 0.9% on TPM.
 
@@ -48,11 +48,20 @@ Run-to-run variation, from the repeat: 0.2% at p50, 0.9% on TPM.
 |---|---|---|---|---|---|---|---|---|
 | `exl3-k3` | SGLang EXL3 fork, Qwen3.8-27B EXL3 3.0 bpw, NEXTN 3 steps / 4 draft tokens (local-ai-registry RTX 3090 recipe, verbatim) | 1 | 0.963 | 67.3 | 53.1 | 3,944 | 915/idle | PASS, barely |
 | `exl3-tp2-k3` | Same, `--tp-size 2` | 2 | - | - | - | - | - | failed to start |
-| `tabby-tp2-k3` | TabbyAPI (ExLlamaV3), same EXL3 weights, tensor parallel, MTP | 2 | pending | | | | | |
-| `v032-best-k2` | vLLM 0.32.0, best config (baseline for DFlash2) | 2 | pending | | | | | |
-| `v032-dflash2-k7` | vLLM 0.32.0, DFlash2 draft model, 7 tokens per block | 2 | pending | | | | | |
+| `tabby-tp2-k3` | TabbyAPI (ExLlamaV3), same EXL3 weights, tensor parallel, MTP | 2 | 1.118 | 72.6 | 59.2 | 4,110 | 1515/1440 | **FAIL** (TTFT) |
 
 `exl3-k3`: the server logged 2.42 accepted tokens per verify step (accept rate 0.47), and GPU0 sat at the 225 W cap at 915 MHz. The registry reports 138.8 / 135.0 tok/s for this recipe on its own speed test, presumably at stock power. `exl3-tp2-k3` failed with `NotImplementedError: tensor-parallel EXL3 is not implemented (single GPU only)`.
+
+### 5. vLLM 0.32.0 and DFlash2 block drafting
+
+Same settings as section 3 (Triton, full + piecewise graphs, BF16 KV), on vLLM 0.32.0 in `~/venvs/vllm032`. DFlash2 is `z-lab/Qwen3.8-27B-DFlash2` (revision `50307d4`), a 5-layer draft model that proposes a block of tokens in one pass. "acc." for DFlash2 is accepted per drafted token out of 7.
+
+| Label | Speculation | TTFT p50 | TTFT p95 | tok/s p50 | tok/s p5 | acc. | TPM | Clocks | Gate |
+|---|---|---|---|---|---|---|---|---|---|
+| `v032-best-k2` | MTP, 2 draft tokens | 0.125 | 0.571 | 92.2 | 85.1 | 0.630 | 5,470 | 1440/1305 | PASS |
+| **`v032-dflash2-k7`** (best) | **DFlash2, 7 per block** | 0.128 | 0.579 | **121.6** | **96.4** | 0.335 | **6,967** | 1575/1470 | PASS |
+
+MTP on 0.32 beat the same config on 0.27.1 by 3.3% at slightly lower clocks. The DFlash2 run's clocks were 9-12% higher than the 0.32 baseline's. Decode is bandwidth-bound, so that's a small share of the 27% gap, but a repeat at matched clocks would tighten it. The first DFlash2 start failed: FlashInfer JIT-compiles a top-k kernel for DFlash2's candidate selector and picked up the system `nvcc` 12.0 (`Ninja build failed`). Pointing `CUDA_HOME` at the installed CUDA 13.1 fixed it.
 
 ## Accuracy runs
 
@@ -60,7 +69,8 @@ Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, re-scored by fin
 
 | Label | Config | GSM8K Platinum | IFEval | Status |
 |---|---|---|---|---|
-| `q27-best-k2` | Best config | **99%** final answer (lm-eval flexible-extract: 91%) | **89%** (6 empty answers: thinking hit 32k) | done, 14:37-15:50 |
+| `q27-best-k2` | MTP 2 draft tokens, vLLM 0.27.1 | **99%** final answer (lm-eval flexible-extract: 91%) | **89%** (6 empty answers: thinking hit 32k) | done, 14:37-15:50 |
+| **`v032-dflash2-k7`** | **DFlash2, vLLM 0.32 (best)** | **99%** final answer (flexible-extract: 92%) | **91%** (2 empty answers) | done, 16:26-16:54 |
 | reference | RedHat model card, INT4, full test sets | 96.77% | 91.93% | published |
 
 The 9 flexible-extract misses on GSM8K: 8 were correct answers that the last-number rule misread ("**$75.00** on yogurt over 30 days" read as 30; "$26.00" not matched to 26), and 1 was wrong (40% for 60%). IFEval's 11 misses: 6 empty answers on constraint-heavy prompts (forbidden words, lowercase, JSON, quoting, Marathi), 3 letter-frequency counts, 1 highlighted-sections count, 1 repeat-the-prompt with no commas.
@@ -82,8 +92,12 @@ Earlier attempts, none of which produced scores:
 | 12:31 | systemd-oomd killed the terminal and everything in it (19 processes) | Strata locking ~30 GB of RAM pushed memory pressure to 63% (> 50% for 20 s) | Long jobs run as systemd user units; Strata shelved |
 | 12:40-13:45 | EXL3 weight download stalled for ~50 min while its process stayed alive | `hf download` hang | Resumed with `aria2c --lowest-speed-limit`, SHA-256 checked |
 | 12:52 | vLLM crash during an eval (attempt 2 above) | Batched MTP path in vLLM 0.27.1 (`cudaErrorIllegalAddress`) | One request at a time; batched runs untested since |
+| 16:11 | DFlash2 server failed to start, twice | FlashInfer JIT compile of a top-k kernel used the system nvcc 12.0 | `CUDA_HOME=/usr/local/cuda-13.1` (`serve.sh` sets it for `SPEC=dflash`) |
+| 16:22 | DFlash2 accuracy suite didn't start (`env: '': No such file or directory`) | systemd expanded `${...}` inside an inline `bash -c` script | Suite steps moved to `suite.sh`, run as a file |
 
 ## Considered and not run
+
+
 
 | Option | Why not |
 |---|---|
