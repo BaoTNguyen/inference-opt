@@ -68,6 +68,19 @@ Same settings as section 3 (Triton, full + piecewise graphs, BF16 KV), on vLLM 0
 
 MTP on 0.32 beat the same config on 0.27.1 by 3.3% at slightly lower clocks. The DFlash2 run's clocks were 9-12% higher than the MTP baseline's, so both were repeated back to back (the `-r2` rows). The clock gap came back the same way, so it's a property of DFlash2's work under the 225 W cap (it draws less power per clock), not luck. Over the two pairs, DFlash2 beats MTP by 24-27%. DFlash2 varied 2.5% between runs; MTP under 1%. The first DFlash2 start failed: FlashInfer JIT-compiles a top-k kernel for DFlash2's candidate selector and picked up the system `nvcc` 12.0 (`Ninja build failed`). Pointing `CUDA_HOME` at the installed CUDA 13.1 fixed it.
 
+### Note: peer-comparable run (not the headline)
+
+To compare with published dual-3090 results for this model (LocalMaxxing leaderboard runs, via the local-ai-registry), the best config was run on their workload shape: one ~1,000-token prompt, 512 output tokens, 1 warmup and 5 timed repeats, one request at a time. The prompt is `chat-272` from `data/chat.jsonl` (creative writing, outside the 40 benchmark prompts), written 5 times to `data/peer.jsonl`; run with `bench.py data/peer.jsonl --label peer-1024x512 -c 1 --warmup 1 --max-tokens 512`.
+
+| Setup | Power | Prompt | TTFT | Decode tok/s |
+|---|---|---|---|---|
+| **This repo, `peer-1024x512`:** vLLM 0.32, DFlash2 BF16 drafter, 7 tokens, BF16 output layer | 225 W cap | 989 tokens | 0.771 s | **117.8** (5 runs: 117.0-118.2) |
+| Peer: vLLM, TP=2, DFlash2 W4A16 drafter, 4 tokens, int8 output layer, PHB / no P2P | 390/350 W limits, ~329/318 W peak | 1,109 tokens, synthesized | 0.825 s | 173.1 |
+| Peer: SGLang, TP=2, DFlash2 W8A16, 6 tokens, curated 40,960-token draft vocabulary, torch.compile, W4A8 MLP kernels | not stated | ~1,024 tokens | 0.677 s | 192.6 |
+| Peer: vLLM, one 3090, MTP 4, thinking off | not stated | not stated | 0.091 s | 113.2 |
+
+On the same workload shape this setup decodes at about 68% of the fastest comparable vLLM run, and its speed barely changed from the 40-chat benchmark, so the workload doesn't explain the gap. The likely causes are setup differences: about 40% more power per card, a draft model one third the size (W4A16, 1.28 GB vs 3.85 GB), an int8 output layer, and fewer draft tokens. The peer's synthesized prompt may also draft more easily than this one (36% acceptance here; theirs isn't published). TTFT is in the same range as the peers at this prompt size. The quantized drafter and int8 output layer are the untried levers that stay within this project's 225 W rule.
+
 ## Accuracy runs
 
 Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, re-scored by final answer with `rescore.py`) + IFEval (prompt-level strict), first 100 each, 32,768-token budget, one request at a time.
