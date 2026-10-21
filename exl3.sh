@@ -41,3 +41,8 @@ done
 curl -sf $URL/health >/dev/null || { echo "not healthy after 10 min"; exit 1; }
 uv run -q bench.py data/chat.jsonl --label "$L" -c 1 -n 40 --max-tokens "$MAXTOK" --url $URL --model $NAME >/dev/null
 python3 report.py "$L"
+# same accuracy suite as the vLLM configs, only if the speed gate passed (one request at a time, as the recipe serves)
+if tail -1 results/summary.jsonl | python3 -c "import json,sys; sys.exit(0 if json.loads(sys.stdin.read())['pass'] else 1)"; then
+  MODEL=$NAME URL=$URL ./eval.sh "$L" > "results/eval-$L.log" 2>&1
+  grep -E "^\|" "results/eval-$L.log"
+fi

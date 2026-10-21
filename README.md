@@ -83,6 +83,13 @@ Strata serves Qwen3.8-Flash-Next at 1-3 bits, with experts split across RAM and 
 
 Pass rule: every request succeeds, TTFT p95 < 1.0 s, and decode tok/s p50 >= 60.
 
+### Fixed suite
+
+Every config is measured on the same two runs, so results compare directly:
+
+- **Speed:** `bench.py`, as above. The first 40 prompts of `data/chat.jsonl`, one client, temperature 0, up to 1024 tokens, thinking on.
+- **Accuracy:** `eval.sh` defaults. GSM8K Platinum zero-shot CoT (`tasks/gsm8k_platinum_think.yaml`, the lm-eval task without its `"Q:"` stop sequence) plus IFEval, the first 100 questions of each. Generation budget is 32,768 tokens, thinking included, served with `LEN=36864`, one request at a time. GSM8K is scored with flexible-extract and IFEval with prompt-level strict accuracy. These are the same benchmarks RedHat's model card reports for this INT4 checkpoint (GSM8K Platinum 96.77%, IFEval 91.93%), on a 100-question sample, so expect about ±3-4 points.
+
 Percentiles are taken over the 40 requests. p50 is the median. For speed, p5 is the slow tail (95% of requests were faster). For TTFT, p95 is the slow tail (95% of requests started sooner).
 
 ## Reproduce
