@@ -24,7 +24,17 @@ case $M in
   *) echo "unknown M=$M"; exit 1 ;;
 esac
 [ "$TP" -gt 1 ] && GPU=$(seq -s, 0 $((TP - 1)))
-[ "$K" -gt 0 ] && EXTRA+=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":$K}")
+# SPEC=mtp (default, the model's own head) or SPEC=dflash with DRAFT=<draft model dir> (block drafter, K tokens per
+# pass; z-lab DFlash2 suggests K=7). DFlash2 needs vLLM >= 0.32 (VLLM=~/venvs/vllm032/bin/vllm).
+SPEC=${SPEC:-mtp}; DRAFT=${DRAFT:-}
+if [ "$K" -gt 0 ]; then
+  if [ "$SPEC" = dflash ]; then
+    [ -n "$DRAFT" ] || { echo "SPEC=dflash needs DRAFT=<dir>"; exit 1; }
+    EXTRA+=(--speculative-config "{\"method\":\"dflash\",\"model\":\"$DRAFT\",\"num_speculative_tokens\":$K}")
+  else
+    EXTRA+=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":$K}")
+  fi
+fi
 [ -n "${ATTN:-}" ] && EXTRA+=(--attention-backend "$ATTN")
 [ -n "${CG:-}" ] && EXTRA+=(--compilation-config "{\"cudagraph_mode\":\"$CG\"}")
 # KV = KV cache dtype (unset: the checkpoint's FP8). Triton attention can't read FP8 KV on sm_86, so it needs KV=bfloat16
@@ -33,7 +43,7 @@ esac
 # so every run here had it; this only measures what it is worth
 [ "${ASYNC:-}" = 0 ] && EXTRA+=(--no-async-scheduling)
 # FlashInfer sampler JIT fails with the system nvcc 12.0 (found in inference-explainer); DEV_MODE exposes /reset_prefix_cache
-CUDA_VISIBLE_DEVICES=$GPU VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_SERVER_DEV_MODE=1 exec vllm serve "$W" --served-model-name llm \
+CUDA_VISIBLE_DEVICES=$GPU VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_SERVER_DEV_MODE=1 exec "${VLLM:-vllm}" serve "$W" --served-model-name llm \
   --tensor-parallel-size "$TP" --max-num-seqs "$SEQS" --max-num-batched-tokens "$BATCH" --max-model-len "$LEN" \
   --gpu-memory-utilization "$UTIL" --default-chat-template-kwargs "{\"enable_thinking\": $THINK}" \
   --enable-prompt-tokens-details "${EXTRA[@]}" --port "$PORT"
