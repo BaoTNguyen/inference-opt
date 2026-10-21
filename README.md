@@ -10,7 +10,15 @@ The goal was the highest output tokens per minute (TPM) from the smartest model 
 
 That's **+43% decode speed and TPM** over the same model and engine without any of the tuning: 62.5 tok/s and 3,703 TPM. A repeat of the closest configuration (MTP 3 draft tokens) came within 0.2% at p50 and 0.9% on TPM, so differences under about 1% are noise. MTP with 2 and 3 draft tokens tie on TPM; 2 has the steadier slow tail.
 
-**Accuracy:** pending. The fixed suite (GSM8K Platinum + IFEval, 100 each) is running on this exact config. For reference, RedHat's model card for this INT4 checkpoint reports GSM8K Platinum 96.77% and IFEval 91.93%.
+**Accuracy** on this exact config (fixed suite, first 100 questions each, one request at a time):
+
+| Benchmark | Score | RedHat, same INT4 checkpoint |
+|---|---|---|
+| GSM8K Platinum | **99%** (99/100) | 96.77% |
+| IFEval, prompt-level strict | **89%** (89/100) | 91.93% |
+
+- **GSM8K:** scored by the final stated answer (`rescore.py`). lm-eval's flexible-extract reports 91%, because it takes the last number in the response: in "**160 minutes**, or 2 hours and 40 minutes" it reads 40. Eight of its nine misses were correct answers.
+- **IFEval:** 6 of the 11 misses are empty answers, where thinking used the whole 32,768-token budget on a constraint-heavy prompt. 89 of the 94 prompts it answered pass.
 
 Where each gain came from is in [OPTIMIZATIONS.md](OPTIMIZATIONS.md). Every run, including the ones that lost or failed, is in [RUNS.md](RUNS.md).
 
@@ -54,7 +62,7 @@ Resolved by vLLM itself (from the run's log): Marlin INT4 kernels, Triton attent
 
 - **Speed:** `bench.py` sends the first 40 prompts of `data/chat.jsonl` (English WildChat first turns) one at a time, after 2 warmups. Temperature 0, up to 1,024 output tokens, natural stop, thinking on. TTFT is measured on the client, to the first streamed reasoning or answer token. Decode tok/s per request = (output tokens - 1) / time after the first token. TPM = total output tokens / wall time x 60. GPU clocks, power, temperature and throttle flags are logged every second.
 - **Gate:** all requests succeed, TTFT p95 < 1.0 s, decode tok/s p50 >= 60. p5 is the slow tail for speed (95% of requests were faster), p95 the slow tail for TTFT.
-- **Accuracy:** `eval.sh` (lm-eval 0.4.13): GSM8K Platinum zero-shot CoT (flexible-extract) and IFEval (prompt-level strict), the first 100 questions of each. 32,768-token budget including thinking, one request at a time. These are the benchmarks RedHat reports for this checkpoint; with 100 questions expect about ±3-4 points.
+- **Accuracy:** `eval.sh` (lm-eval 0.4.13): GSM8K Platinum zero-shot CoT (re-scored by final answer with `rescore.py`) and IFEval (prompt-level strict), the first 100 questions of each. 32,768-token budget including thinking, one request at a time. These are the benchmarks RedHat reports for this checkpoint; with 100 questions expect about ±3-4 points.
 
 ## Reproduce
 
@@ -63,6 +71,7 @@ uv run prep.py                        # data/chat.jsonl (1,000 WildChat prompts;
 K=2 ./sweep.sh my-run                 # start the best config, bench it, stop it; row lands in results/summary.jsonl
 LEN=36864 K=2 ./serve.sh &            # then:
 ./eval.sh my-run                      # accuracy suite -> results/eval/my-run/
+python3 rescore.py results/eval/my-run # GSM8K by final answer, plus empty-answer counts
 python3 report.py                     # results table for every label
 ```
 
@@ -70,7 +79,6 @@ Live views for a demo: `uv run demo.py data/chat.jsonl --label demo -n 10 --max-
 
 ## Status
 
-- Accuracy suite for the best config: running.
 - EXL3 on both GPUs through TabbyAPI: queued. EXL3 on one GPU lost (67 tok/s; the card is power-bound at 225 W).
 - DFlash2 block drafting on vLLM 0.32: queued. The draft model's authors report +36% over MTP on chat.
 
@@ -78,7 +86,7 @@ Live views for a demo: `uv run demo.py data/chat.jsonl --label demo -n 10 --max-
 |---|---|
 | `serve.sh`, `sweep.sh` | Start vLLM with every setting as an env var; run one benchmarked config |
 | `bench.py`, `report.py` | Benchmark client and results table |
-| `eval.sh`, `tasks/` | Fixed accuracy suite |
+| `eval.sh`, `tasks/`, `rescore.py` | Fixed accuracy suite and final-answer GSM8K scoring |
 | `exl3.sh`, `tabby.sh`, `dflash.sh`, `strata.sh` | The other engines and drafters tried (see RUNS.md) |
 | `demo.py`, `demo.html`, `grafana/` | Live demo page and dashboard |
 | `results/summary.jsonl` | One line per benchmark run, the source of every number here |

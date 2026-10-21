@@ -56,12 +56,14 @@ Run-to-run variation, from the repeat: 0.2% at p50, 0.9% on TPM.
 
 ## Accuracy runs
 
-Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, flexible-extract) + IFEval (prompt-level strict), first 100 each, 32,768-token budget, one request at a time.
+Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, re-scored by final answer with `rescore.py`) + IFEval (prompt-level strict), first 100 each, 32,768-token budget, one request at a time.
 
 | Label | Config | GSM8K Platinum | IFEval | Status |
 |---|---|---|---|---|
-| `q27-best-k2` | Best config | pending | pending | running |
+| `q27-best-k2` | Best config | **99%** final answer (lm-eval flexible-extract: 91%) | **89%** (6 empty answers: thinking hit 32k) | done, 14:37-15:50 |
 | reference | RedHat model card, INT4, full test sets | 96.77% | 91.93% | published |
+
+The 9 flexible-extract misses on GSM8K: 8 were correct answers that the last-number rule misread ("**$75.00** on yogurt over 30 days" read as 30; "$26.00" not matched to 26), and 1 was wrong (40% for 60%). IFEval's 11 misses: 6 empty answers on constraint-heavy prompts (forbidden words, lowercase, JSON, quoting, Marathi), 3 letter-frequency counts, 1 highlighted-sections count, 1 repeat-the-prompt with no commas.
 
 Earlier attempts, none of which produced scores:
 

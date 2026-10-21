@@ -60,7 +60,7 @@ With full graphs, 2 and 3 draft tokens tie: 89.2 vs 89.7 tok/s, and 5,294 vs 5,2
 - **Async scheduling:** already on in every run. It's vLLM 0.27.1's default with MTP.
 - **`--max-num-seqs 4`, `--max-model-len 16384`, `--max-num-batched-tokens 4096`:** sized for one client and short chat. Not measured one by one. At one request they mainly set memory reservations, and prompts here (up to ~1,500 tokens) prefill in one chunk.
 - **Prefix caching:** off, as vLLM resolves it for this hybrid model with MTP. Chat prompts don't share prefixes, so it wouldn't help.
-- **Thinking mode:** thinking tokens count toward TPM like any other. 32 of 40 requests used the full 1,024-token budget, and output totals were within 2% across runs, so TPM compares fairly between configs.
+- **Thinking mode:** thinking tokens count toward TPM like any other. 32 of 40 requests used the full 1,024-token budget, and output totals were within 2% across runs, so TPM compares fairly between configs. One cost of thinking shows up in accuracy, not speed: on 6 of 100 IFEval prompts, all heavy on constraints, the model kept checking itself until the 32,768-token budget ran out and never answered. That's 5+ minutes of tokens with nothing to show for it. A smaller budget wouldn't fix it. A thinking-off mode or a fine-tune that thinks shorter would.
 
 ## TTFT
 
