@@ -101,6 +101,10 @@ async def one(cl, a, r, url):
                 timings = d.get("timings") or timings
                 ch = d.get("choices") or []
                 delta = ch[0].get("delta", {}) if ch else {}
+                if a.on_delta:  # demo.py's live view; same stream, same clock
+                    for k in ("reasoning_content", "reasoning", "content"):
+                        if delta.get(k):
+                            a.on_delta("answer" if k == "content" else "thinking", delta[k])
                 if first is None and (delta.get("content") or delta.get("reasoning_content") or delta.get("reasoning")):
                     first = time.perf_counter()
     except Exception as e:  # keep going; errors are counted in the summary
@@ -141,7 +145,11 @@ async def main(a):
 
         async def worker(url):
             for r in it:  # shared iterator: each worker pulls the next request
+                if a.on_start:
+                    a.on_start(r)
                 res.append(await one(cl, a, r, url))
+                if a.on_done:
+                    a.on_done(res[-1], res)
 
         gpu, stop = [], asyncio.Event()
         poller = asyncio.create_task(gpu_poll(gpu, stop))
@@ -189,7 +197,8 @@ async def main(a):
             break
 
 
-if __name__ == "__main__":
+def parser():
+    """The CLI; demo.py reuses it so a live demo run takes the same flags and lands in the same summary.jsonl."""
     p = argparse.ArgumentParser()
     p.add_argument("data")
     p.add_argument("--label", required=True)
@@ -204,4 +213,9 @@ if __name__ == "__main__":
     p.add_argument("--no-cache-prompt", action="store_true", help="send cache_prompt=false (llama.cpp)")
     p.add_argument("--ignore-eos", action="store_true")
     p.add_argument("--reset-cache", action="store_true", help="POST /reset_prefix_cache first (vLLM dev mode)")
-    asyncio.run(main(p.parse_args()))
+    p.set_defaults(on_delta=None, on_start=None, on_done=None)  # hooks, set only by demo.py
+    return p
+
+
+if __name__ == "__main__":
+    asyncio.run(main(parser().parse_args()))

@@ -94,8 +94,11 @@ ATTN=TRITON_ATTN CG=FULL_AND_PIECEWISE KV=bfloat16 ./sweep.sh q27-k3-triton-full
 ./serve.sh & ./eval.sh q27-k3                     # accuracy: GSM8K CoT zero-shot + IFEval, 250 each -> results/eval/q27-k3/
 ./exl3.sh exl3-k3                                 # SGLang EXL3 recipe, one GPU (GPU=1 for the other card)
 python3 report.py                                 # table of every config in results/summary.jsonl
+uv run demo.py data/chat.jsonl --label demo-q27-k3 -n 10 --max-tokens 1024   # live page on http://localhost:8090, see below
 docker compose -f grafana/docker-compose.yaml up -d   # live dashboard on http://localhost:3001
 ```
+
+`demo.py` is the page for the video. It runs `bench.py`'s own `main()` with three hooks, so the transcript (thinking greyed, then the answer) streams on the left while the gate tiles, the per-request tok/s chart and GPU temperature and power update on the right. The run starts when the page connects and lands in `results/summary.jsonl` like any other. The live tok/s shown during a request is an estimate (characters per token calibrated on finished requests, since MTP sends several tokens per chunk). The exact value replaces it when the request ends. It works with any OpenAI-compatible server (`--url`, `--model`), so the vLLM and SGLang runs use the same page.
 
 The dashboard's top row shows the gate (TTFT p95, decode tok/s per request, output TPM) in red or green against the thresholds, with vLLM's stock dashboard below. Those are server-side numbers from Prometheus. `bench.py`'s client-side numbers are the record.
 
@@ -133,8 +136,8 @@ In the sibling project [inference-explainer](../inference-explainer), the same d
 
 ## Pending
 
-- **Accuracy eval of the k=3 config.** The first attempt crashed before scoring (IFEval needed `langdetect`). `eval.sh` now installs `lm-eval[api,ifeval]`, and the eval is rerunning as `q27-k3` after a 2-question smoke test. Scores will land in `results/eval/q27-k3/`.
-- **Triton attention with full CUDA graphs.** The first run (`q27-k3-triton-full`) failed at startup: `FP8 KV cache is not supported by the Triton attention backend on NVIDIA GeForce RTX 3090 (compute capability 8.6); native FP8 (fp8e4nv) requires SM89+. Re-run with --kv-cache-dtype bfloat16.` A retry with `KV=bfloat16` (`q27-k3-triton-full-bf16kv`) is queued after the eval. It changes three things at once (attention backend, CUDA graph mode, KV dtype), so any difference from the best result can't be pinned on one of them.
+- **Accuracy eval of the k=3 config.** Two attempts failed before scoring. The first crashed because IFEval needed `langdetect` (`eval.sh` now installs `lm-eval[api,ifeval]`). In the second, the stock `gsm8k_cot_zeroshot` stop sequence `"Q:"` fired inside the model's thinking and cut answers off, and at 4 requests in flight the vLLM server crashed with `cudaErrorIllegalAddress` on GPU 1 while building FlashInfer attention metadata under MTP. The benchmark, which sends one request at a time, never hit this. The rerun (`q27-k3`, 100 questions per task) uses `tasks/gsm8k_think.yaml` (the same task without stop sequences) and one request at a time, matching the benchmark. Scores will land in `results/eval/q27-k3/`.
+- **Triton attention with full CUDA graphs.** The first run (`q27-k3-triton-full`) failed at startup: `FP8 KV cache is not supported by the Triton attention backend on NVIDIA GeForce RTX 3090 (compute capability 8.6); native FP8 (fp8e4nv) requires SM89+. Re-run with --kv-cache-dtype bfloat16.` A retry with `KV=bfloat16` (`q27-k3-triton-full-bf16kv`) is running. It changes three things at once (attention backend, CUDA graph mode, KV dtype), so any difference from the best result can't be pinned on one of them.
 - **SGLang EXL3 run** (`exl3-k3`), queued behind the weight download and image pull.
 
 ## Files
@@ -149,5 +152,7 @@ In the sibling project [inference-explainer](../inference-explainer), the same d
 | `strata.sh` | Runs Strata in its own systemd scope, then the same bench |
 | `prep.py` | Builds `data/chat.jsonl` from WildChat (gitignored) |
 | `report.py` | Prints the results table and the best passing run per label |
+| `demo.py`, `demo.html` | Live page for the video: the bench run's streamed output beside its gate metrics |
+| `tasks/gsm8k_think.yaml` | lm-eval's GSM8K CoT task without the `"Q:"` stop sequence, which fired inside thinking |
 | `results/summary.jsonl` | One line per benchmark run, the source for every table here |
 | `grafana/` | Prometheus + Grafana compose file, scrape config and dashboard |
