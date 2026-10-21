@@ -4,8 +4,8 @@
 # ///
 """Live demo page: bench.py's run, streamed to a browser as it happens.
 
-uv run demo.py data/chat.jsonl --label demo-q27-k3 -n 10 --max-tokens 1024 [--url ... --model ...] [--port 8090]
-Open http://localhost:8090; the run starts when the page connects (so a recording catches request 1).
+uv run demo.py data/chat.jsonl --label demo -n 8 --max-tokens 1024 [--url ... --model ...] [--port 8090]
+Open http://localhost:8090 and press Run. Each press runs the first -n prompts again and records it as <label>-1, -2, ...
 
 It takes bench.py's flags and runs bench.py's own main(), so every number on the page comes from the same timing
 code and the run lands in results/summary.jsonl like any other. Works with any OpenAI-compatible server.
@@ -18,8 +18,8 @@ import bench
 
 PAGE = (Path(__file__).parent / "demo.html").read_bytes()
 clients, lock = [], threading.Lock()
-state = {"done": [], "current": None, "gpu": [], "args": {}, "stats": None}  # replayed to a page that connects mid-run
-connected = threading.Event()
+state = {"done": [], "current": None, "gpu": [], "args": {}, "stats": None, "running": False, "run": 0}  # replayed on connect
+run_requested = threading.Event()
 
 
 def send(ev):
@@ -43,7 +43,6 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 q.put({"type": "snapshot", **state})
                 clients.append(q)
-            connected.set()
             try:
                 while True:
                     self.wfile.write(f"data: {json.dumps(q.get())}\n\n".encode())
@@ -64,6 +63,16 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(PAGE)
         else:
             self.send_error(404)
+
+
+    def do_POST(self):
+        if self.path.split("?")[0] != "/run":
+            return self.send_error(404)
+        busy = state["running"] or run_requested.is_set()
+        if not busy:
+            run_requested.set()
+        self.send_response(409 if busy else 202)  # 409: a run is already going
+        self.end_headers()
 
 
 def gpu_loop():
@@ -99,9 +108,9 @@ def main():
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     threading.Thread(target=gpu_loop, daemon=True).start()
-    state["args"] = {"label": a.label, "model": a.model, "url": a.url, "n": a.n, "max_tokens": a.max_tokens}
-    print(f"open http://localhost:{a.port} - the run starts when the page connects")
-    connected.wait()
+    base = a.label
+    state["args"] = {"label": base, "model": a.model, "url": a.url, "n": a.n, "max_tokens": a.max_tokens}
+    print(f"open http://localhost:{a.port} and press Run (each run records as {base}-1, {base}-2, ...). Ctrl-C to stop")
     t0 = None
 
     def on_start(r):
@@ -125,11 +134,20 @@ def main():
         state["current"] = None
 
     a.on_start, a.on_delta, a.on_done = on_start, on_delta, on_done
-    asyncio.run(bench.main(a))
-    send({"type": "finished"})
-    print(f"finished; recorded in results/summary.jsonl as {a.label}. Ctrl-C to stop the page")
     try:
-        threading.Event().wait()
+        while True:
+            run_requested.wait()
+            state.update(done=[], current=None, stats=None, running=True, run=state["run"] + 1)
+            a.label, t0 = f"{base}-{state['run']}", None
+            run_requested.clear()
+            send({"type": "reset", "run": state["run"], "label": a.label})
+            try:
+                asyncio.run(bench.main(a))
+            except Exception as e:  # a failed run must leave the button usable
+                print("run failed:", e)
+            state["running"] = False
+            send({"type": "finished", "label": a.label})
+            print(f"run {state['run']} finished; recorded in results/summary.jsonl as {a.label}")
     except KeyboardInterrupt:
         pass
 
