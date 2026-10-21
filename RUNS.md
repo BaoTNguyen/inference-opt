@@ -60,11 +60,13 @@ Same settings as section 3 (Triton, full + piecewise graphs, BF16 KV), on vLLM 0
 |---|---|---|---|---|---|---|---|---|---|
 | `v032-best-k2` | MTP, 2 draft tokens | 0.125 | 0.571 | 92.2 | 85.1 | 0.630 | 5,470 | 1440/1305 | PASS |
 | **`v032-dflash2-k7`** (best) | **DFlash2, 7 per block** | 0.128 | 0.579 | **121.6** | **96.4** | 0.335 | **6,967** | 1575/1470 | PASS |
+| `v032-best-k2-r2` (back-to-back repeat) | MTP, 2 draft tokens | 0.125 | 0.573 | 92.4 | 85.2 | 0.630 | 5,483 | 1440/1335 | PASS |
+| `v032-dflash2-k7-r2` (back-to-back repeat) | DFlash2, 7 per block | 0.131 | 0.580 | 117.5 | 94.4 | 0.335 | 6,793 | 1575/1455 | PASS |
 | `demo-final` (live recording via `demo.py`) | DFlash2, 7 per block, first 8 prompts | 0.135 | 0.242 | 95.0 | 86.4 | 0.287 | 6,058 | - | PASS |
 
 `demo-final` is the run shown in the video: the best config served by `./serve.sh`, driven through the live page. It's lower than the 40-prompt run because these 8 prompts drafted worse (28.7% accepted vs 33.5%), and streaming each chunk to the page costs about 4%. Per request it ranged from 86.4 to 149.1 tok/s, with TTFT from 0.10 to 0.24 s.
 
-MTP on 0.32 beat the same config on 0.27.1 by 3.3% at slightly lower clocks. The DFlash2 run's clocks were 9-12% higher than the 0.32 baseline's. Decode is bandwidth-bound, so that's a small share of the 27% gap, but a repeat at matched clocks would tighten it. The first DFlash2 start failed: FlashInfer JIT-compiles a top-k kernel for DFlash2's candidate selector and picked up the system `nvcc` 12.0 (`Ninja build failed`). Pointing `CUDA_HOME` at the installed CUDA 13.1 fixed it.
+MTP on 0.32 beat the same config on 0.27.1 by 3.3% at slightly lower clocks. The DFlash2 run's clocks were 9-12% higher than the MTP baseline's, so both were repeated back to back (the `-r2` rows). The clock gap came back the same way, so it's a property of DFlash2's work under the 225 W cap (it draws less power per clock), not luck. Over the two pairs, DFlash2 beats MTP by 24-27%. DFlash2 varied 2.5% between runs; MTP under 1%. The first DFlash2 start failed: FlashInfer JIT-compiles a top-k kernel for DFlash2's candidate selector and picked up the system `nvcc` 12.0 (`Ninja build failed`). Pointing `CUDA_HOME` at the installed CUDA 13.1 fixed it.
 
 ## Accuracy runs
 

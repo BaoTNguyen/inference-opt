@@ -8,7 +8,7 @@ The best run decodes at 121.6 tok/s per request and 6,967 TPM. The same model an
 | + MTP drafting, 2-3 tokens | 81.4-84.1 | 4,725-4,968 | +28-34% |
 | + Triton attention, full CUDA graphs, BF16 KV | 89.2 | 5,294 | +7% |
 | + vLLM 0.32.0 | 92.2 | 5,470 | +3% |
-| + DFlash2 block drafting instead of MTP | **121.6** | **6,967** | **+27%** |
+| + DFlash2 block drafting instead of MTP | **117.5-121.6** | **6,793-6,967** | **+24-27%** |
 
 ## The frame: one request, so speed per step is everything
 
@@ -67,7 +67,7 @@ With full graphs, 2 and 3 draft tokens tie: 89.2 vs 89.7 tok/s, and 5,294 vs 5,2
 
 The same MTP configuration went from 89.2 to 92.2 tok/s (5,294 to 5,470 TPM) on vLLM 0.32.0, at slightly lower clocks. That's above the ~1% run-to-run noise. The gain likely comes from kernel and scheduler improvements between versions. It wasn't broken down further, because the main reason for upgrading was DFlash2.
 
-## 7. DFlash2 block drafting: +27%, the second-biggest gain
+## 7. DFlash2 block drafting: +24-27%, the second-biggest gain
 
 MTP's limit (section 3) is that it drafts **one token per pass**, and each pass costs 3-5 ms, so drafting more than 2-3 tokens stops paying. DFlash2 is a separate 5-layer draft model (3.85 GB, BF16) trained for this exact model. It reads hidden states from five of the main model's layers and proposes a **block of 7 tokens in a single pass**. The full model then checks all 7 at once, as with MTP.
 
@@ -78,7 +78,7 @@ MTP's limit (section 3) is that it drafts **one token per pass**, and each pass 
 
 DFlash2 guesses worse per token (a third of its drafts are accepted, against nearly two thirds for MTP), but it makes 7 guesses for about +3 ms of step time instead of 2. So each step yields **48% more tokens for 13% more time**. Because the full model verifies every token, output at temperature 0 is the same as without drafting. The accuracy suite agrees: GSM8K 99% and IFEval 91%, against 99% and 89% with MTP.
 
-The draft model's memory leaves 93,762 tokens of KV cache, against 201,523 with MTP, still far more than a 16k chat needs. The DFlash2 run happened at 9-12% higher clocks than its baseline. Decode is bandwidth-bound, so that's a small share of the 27%, but it's worth a repeat at matched clocks before quoting the number to one decimal.
+The draft model's memory leaves 93,762 tokens of KV cache, against 201,523 with MTP, still far more than a 16k chat needs. The DFlash2 runs held 9-12% higher GPU clocks than the MTP runs, in both the original and a back-to-back repeat. Under a 225 W cap the GPU picks its clock by power draw, and DFlash2's work draws less per clock, so the higher clock is part of what it delivers. Over both pairs the gain is 24-27% (6,967 and 6,793 TPM against 5,470 and 5,483).
 
 ## Settings that don't move the number
 

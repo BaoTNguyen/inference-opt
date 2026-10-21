@@ -8,7 +8,7 @@ The goal was the highest output tokens per minute (TPM) from the smartest model 
 |---|---|---|---|---|---|---|---|---|---|
 | Qwen3.8-27B INT4 | vLLM 0.32.0, TP=2 | DFlash2 draft model, 7 tokens per block | **121.6** | 96.4 | 0.128 s | 0.579 s | **6,967** | 0 / 40 | PASS |
 
-That's **+88% TPM** over the same model and engine with no tuning (62.5 tok/s, 3,703 TPM), and +32% over the best setup using the model's built-in MTP drafting head (5,294 TPM). Run-to-run variation, from a repeated configuration, is about 1% on TPM.
+That's **+88% TPM** over the same model and engine with no tuning (62.5 tok/s, 3,703 TPM). A back-to-back repeat gave 117.5 tok/s and 6,793 TPM. Across both pairs of runs, DFlash2 beats the model's built-in MTP drafting head on the same vLLM by **24-27%** (MTP: 5,470 and 5,483 TPM). DFlash2 varies more between runs (2.5%) than MTP (under 1%).
 
 **Accuracy** on this exact config (fixed suite, first 100 questions each, one request at a time):
 
@@ -54,7 +54,7 @@ CUDA_VISIBLE_DEVICES=0,1 VLLM_USE_FLASHINFER_SAMPLER=0 ~/venvs/vllm032/bin/vllm 
 |---|---|---|
 | Weights | `RedHatAI/Qwen3.8-27B-INT4` (W4A16, Marlin kernels) | ~19 GB; RedHat measures 98.5-101% of BF16 accuracy |
 | Parallelism | Tensor parallel across both cards | One request gets both cards' memory bandwidth and power budget |
-| Speculation | `z-lab/Qwen3.8-27B-DFlash2` (5-layer, 3.85 GB draft model, revision `50307d4`), 7 tokens per block | Drafts a whole block in one pass: +27% TPM over the model's own MTP head on the same vLLM |
+| Speculation | `z-lab/Qwen3.8-27B-DFlash2` (5-layer, 3.85 GB draft model, revision `50307d4`), 7 tokens per block | Drafts a whole block in one pass: +24-27% TPM over the model's own MTP head on the same vLLM |
 | vLLM version | 0.32.0 | DFlash2 support (merged Aug 2026); also +3% over 0.27.1 for the same MTP config |
 | Attention / CUDA graphs / KV cache | Triton, full + piecewise graphs, BF16 | +6.5% over vLLM's own pick (FlashInfer, piecewise only, FP8 KV), which can't capture full graphs with speculation |
 | `CUDA_HOME` = CUDA 13.1 | for FlashInfer's JIT compiler | DFlash2's top-k kernel compiles on first start and fails with the system nvcc 12.0 |
