@@ -13,7 +13,7 @@ for _ in $(seq 30); do
   [ "$used" -lt 4000 ] && break
   sleep 3
 done
-[ "$used" -lt 4000 ] || { echo "a GPU has $used MiB in use: stop llama-server.service / llama-swap first"; exit 1; }
+[ "$used" -lt 4000 ] || { echo "a GPU has $used MiB in use: stop other GPU jobs first"; exit 1; }
 mkdir -p results; pids=(); urls=()
 trap 'for p in "${pids[@]}"; do kill -- -"$p" 2>/dev/null; done' EXIT
 for ((i = 0; i < DP; i++)); do

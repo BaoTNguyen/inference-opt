@@ -80,7 +80,7 @@ python3 report.py                     # results table for every label
 
 Needs `~/venvs/vllm032` (`uv venv ~/venvs/vllm032 --python 3.12 && uv pip install --python ~/venvs/vllm032/bin/python vllm==0.32.0`) and the draft model in `~/models/qwen3.8-27b/dflash2` (`z-lab/Qwen3.8-27B-DFlash2` at revision `50307d4`).
 
-Live views for a demo: `uv run demo.py data/chat.jsonl --label demo -n 8 --max-tokens 1024` streams the run (thinking, answer and the gate metrics) at http://localhost:8090. `docker compose -f grafana/docker-compose.yaml up -d` gives a Grafana dashboard of vLLM's own metrics at http://localhost:3001.
+Live views for a demo: start `./serve.sh`, then `uv run demo.py data/chat.jsonl --label demo -n 8 --max-tokens 1024` streams the run (thinking, answer and the gate metrics) at http://localhost:8090. It's checked against the real server. Streaming every chunk to the page costs about 4%, and the first prompts are slower than the 40-prompt median, so expect the page to read below the table above. `docker compose -f grafana/docker-compose.yaml up -d` gives a Grafana dashboard of vLLM's own metrics at http://localhost:3001. Its TPM panel averages over a minute, so it reads low for the first ~60 s of a run.
 
 | File | Purpose |
 |---|---|

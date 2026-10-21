@@ -2,7 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyarrow", "huggingface_hub"]
 # ///
-"""data/chat.jsonl: 1000 English WildChat first turns (same filter as inference-explainer, 10x the prompts
+"""data/chat.jsonl: 1000 WildChat first turns (English, non-toxic, non-redacted; 10x the prompts
 so a 64-client sweep never runs out). Run: uv run prep.py"""
 import json, random
 from pathlib import Path

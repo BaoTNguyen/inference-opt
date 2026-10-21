@@ -47,7 +47,7 @@ fi
 # ASYNC=0: --no-async-scheduling. vLLM 0.27.1 already turns async scheduling on by default with MTP (config/vllm.py),
 # so every run here had it; this only measures what it is worth
 [ "${ASYNC:-}" = 0 ] && EXTRA+=(--no-async-scheduling)
-# FlashInfer sampler JIT fails with the system nvcc 12.0 (found in inference-explainer); DEV_MODE exposes /reset_prefix_cache
+# FlashInfer sampler JIT fails with the system nvcc 12.0 (seen on this machine with vLLM 0.27.1); DEV_MODE exposes /reset_prefix_cache
 CUDA_VISIBLE_DEVICES=$GPU VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_SERVER_DEV_MODE=1 exec "${VLLM:-vllm}" serve "$W" --served-model-name llm \
   --tensor-parallel-size "$TP" --max-num-seqs "$SEQS" --max-num-batched-tokens "$BATCH" --max-model-len "$LEN" \
   --gpu-memory-utilization "$UTIL" --default-chat-template-kwargs "{\"enable_thinking\": $THINK}" \

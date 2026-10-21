@@ -14,9 +14,9 @@ The best run decodes at 121.6 tok/s per request and 6,967 TPM. The same model an
 
 With one request at a time, TPM is decode speed × 60, minus about 1% for time-to-first-token and the gaps between requests. So the only way to raise TPM is to make each decode step faster or have it produce more tokens.
 
-Decoding one request is **memory-bandwidth bound**: each step reads every weight once to produce one token. For this model on two 3090s, the bytes-per-token arithmetic in the sibling project `inference-explainer` puts the ceiling at 123.6 tok/s. Without drafting we measured **62.5 tok/s, about 51% of it**: 16.0 ms per step against a ~8.1 ms ideal.
+Decoding one request is **memory-bandwidth bound**: each step reads every weight once to produce one token. For this model on two 3090s, bytes-per-token arithmetic puts the ceiling at 123.6 tok/s. That figure, and the all-reduce timing below, come from `inference-explainer`, a separate (unpublished) study on this same machine; they're quoted here, not reproduced by this repo's scripts. Without drafting we measured **62.5 tok/s, about 51% of it**: 16.0 ms per step against a ~8.1 ms ideal.
 
-Most of that gap is **communication between the two GPUs**. Tensor parallelism needs two all-reduces per layer, about 128 per step for 64 layers. Without P2P they go through host memory, and `inference-explainer` measured about 57 µs each for this message size (an upper bound, measured outside CUDA graphs). That's ~7.3 ms per step. Adding it to the ~8.1 ms ideal gives ~15.4 ms, close to the 16.0 ms measured. This is the biggest remaining cost, and no software setting here removes it. See [What limits further gains](#what-limits-further-gains).
+Most of that gap is **communication between the two GPUs**. Tensor parallelism needs two all-reduces per layer, about 128 per step for 64 layers. Without P2P they go through host memory, and that study measured about 57 µs each for this message size (an upper bound, measured outside CUDA graphs). That's ~7.3 ms per step. Adding it to the ~8.1 ms ideal gives ~15.4 ms, close to the 16.0 ms measured. This is the biggest remaining cost, and no software setting here removes it. See [What limits further gains](#what-limits-further-gains).
 
 ## 1. Model and weights: Qwen3.8-27B, INT4 (W4A16)
 
