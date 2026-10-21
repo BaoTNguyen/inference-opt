@@ -33,7 +33,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == "/events":
+        path = self.path.split("?")[0]  # ignore query strings (?shot=...)
+        if path == "/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -50,7 +51,13 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 with lock:
                     clients.remove(q)
-        elif self.path in ("/", "/index.html"):
+        elif path == "/snapshot":  # current state as JSON (demo.html ?shot mode renders from it before load completes)
+            body = json.dumps({"type": "snapshot", **state}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        elif path in ("/", "/index.html"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()

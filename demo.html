@@ -189,6 +189,13 @@ es.onmessage = m => {
 function gpu(g) {
   $("gpu").innerHTML = g.map(x => `GPU${x.i} ${x.temp.toFixed(0)}°C · ${x.power.toFixed(0)} W · ${x.util.toFixed(0)}% · ${x.sm.toFixed(0)} MHz`).join("<br>");
 }
+// ?shot: render the current state synchronously and skip the live stream, so a headless screenshot
+// (which captures at page load) shows real data. Used only to check the layout.
+if (new URLSearchParams(location.search).has("shot")) {
+  es.close();
+  const x = new XMLHttpRequest(); x.open("GET", "/snapshot", false); x.send();
+  es.onmessage({ data: x.responseText });
+}
 </script>
 </body>
 </html>
