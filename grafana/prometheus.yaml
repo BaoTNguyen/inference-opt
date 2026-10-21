@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: vllm
+    static_configs:
+      # ponytail: replica 2 (8002) not scraped; your email app owns that port, add it when DP=2 moves ports
+      - targets: ['host.docker.internal:8001']
