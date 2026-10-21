@@ -60,6 +60,9 @@ Same settings as section 3 (Triton, full + piecewise graphs, BF16 KV), on vLLM 0
 |---|---|---|---|---|---|---|---|---|---|
 | `v032-best-k2` | MTP, 2 draft tokens | 0.125 | 0.571 | 92.2 | 85.1 | 0.630 | 5,470 | 1440/1305 | PASS |
 | **`v032-dflash2-k7`** (best) | **DFlash2, 7 per block** | 0.128 | 0.579 | **121.6** | **96.4** | 0.335 | **6,967** | 1575/1470 | PASS |
+| `demo-final` (live recording via `demo.py`) | DFlash2, 7 per block, first 8 prompts | 0.135 | 0.242 | 95.0 | 86.4 | 0.287 | 6,058 | - | PASS |
+
+`demo-final` is the run shown in the video: the best config served by `./serve.sh`, driven through the live page. It's lower than the 40-prompt run because these 8 prompts drafted worse (28.7% accepted vs 33.5%), and streaming each chunk to the page costs about 4%. Per request it ranged from 86.4 to 149.1 tok/s, with TTFT from 0.10 to 0.24 s.
 
 MTP on 0.32 beat the same config on 0.27.1 by 3.3% at slightly lower clocks. The DFlash2 run's clocks were 9-12% higher than the 0.32 baseline's. Decode is bandwidth-bound, so that's a small share of the 27% gap, but a repeat at matched clocks would tighten it. The first DFlash2 start failed: FlashInfer JIT-compiles a top-k kernel for DFlash2's candidate selector and picked up the system `nvcc` 12.0 (`Ninja build failed`). Pointing `CUDA_HOME` at the installed CUDA 13.1 fixed it.
 
