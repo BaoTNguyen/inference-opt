@@ -107,6 +107,10 @@ On the same workload shape this setup decodes at about 68% of the fastest compar
 
 On the 7 chat prompts shared with the benchmark, outputs were identical and the demo was slower by 3% with the page alone (`demo-1`) and by 11% while recording (`demo-final-1`): OBS at 1080p60 on the display GPU cost about 8%. The demo's median is higher than the benchmark's because math prompts draft easily (GSM8K median 188 tok/s); its p5 and TPM are lower because of the overhead, and its TTFT p95 is lower because the set has no long prompts.
 
+### Note: same-day baseline rerun (not used)
+
+`base-chat` reran the vanilla config (vLLM 0.27.1 defaults, no drafting) on the 40 chat prompts at 20:21, but OBS was open on the display GPU (capturing, not recording). It came out 6.5% below the morning's identical run: 58.2 tok/s p50, 57.5 p5, 3,461 TPM, failing the 60 tok/s gate, at higher clocks (1440/1335 MHz). That matches the ~8% OBS overhead measured on the demo. Comparisons use the clean morning run, `q27-tp2-k0` (62.5 tok/s, 3,703 TPM).
+
 ## Accuracy runs
 
 Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, re-scored by final answer with `rescore.py`) + IFEval (prompt-level strict), first 100 each, 32,768-token budget, one request at a time.
@@ -115,6 +119,7 @@ Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, re-scored by fin
 |---|---|---|---|---|
 | `q27-best-k2` | MTP 2 draft tokens, vLLM 0.27.1 | **99%** final answer (lm-eval flexible-extract: 91%) | **89%** (6 empty answers: thinking hit 32k) | done, 14:37-15:50 |
 | `v032-dflash2-k7` | DFlash2 BF16 draft, vLLM 0.32 | **99%** final answer (flexible-extract: 92%) | **91%** (2 empty answers) | done, 16:26-16:54 |
+| `base-acc` | Baseline: vLLM 0.27.1 defaults, no drafting | 99% final answer (flexible-extract: 93%) | 89% (7 empty answers) | done, 20:34-22:22 |
 | **`v032-dflash2w4-k7`** | **DFlash2 W4A16 draft, vLLM 0.32 (best)** | **99%** final answer (flexible-extract: 92%) | **90%** (5 empty answers) | done, 19:16-19:49 |
 | reference | RedHat model card, INT4, full test sets | 96.77% | 91.93% | published |
 

@@ -184,7 +184,7 @@ window.renderAt = (i, sec) => {
 if (new URLSearchParams(location.search).has("video")) {  // race window only, sized for 1920x1080
   document.getElementById("charts").style.display = "none";
   const w = document.querySelector(".win"); w.style.maxWidth = "1860px"; w.style.margin = "20px auto"; document.body.style.background = "#0c0c0c";
-  document.querySelectorAll(".body").forEach(b => { b.style.height = "720px"; b.style.fontSize = "16px";  // fills a 1080p frame });
+  document.querySelectorAll(".body").forEach(b => { b.style.height = "720px"; b.style.fontSize = "16px"; });  // fills a 1080p frame
   $("#go").style.visibility = "hidden"; tabs.querySelector("a").style.display = "none";
 }
 reset();
@@ -201,7 +201,7 @@ reset();
   // bar with a 4px rounded data-end, flat at the baseline
   const barPath = (x, y, w, h) => { const r = Math.min(4, w / 2, h); return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; };
   const nice = range => { const p = Math.pow(10, Math.floor(Math.log10(range))); return [0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10].map(m => m * p).find(s => range / s <= 5); };  // step giving <= 5 gridlines
-  function card(title, sub, wide) { const c = document.createElement("div"); c.className = "card" + (wide ? " wide" : ""); c.innerHTML = `<h3>${title}</h3><p>${sub}</p>`; cg.append(c); return c; }
+  function card(title, sub, wide, solo) { const c = document.createElement("div"); c.className = "card" + (wide ? " wide" : ""); c.innerHTML = `<h3>${title}</h3><p>${sub}</p>` + (solo ? "" : document.querySelector(".legend").outerHTML); cg.append(c); return c; }  // own legend: each card is also exported as a standalone image
 
   function grouped(title, sub, groups, key, fmt, ref, cap) {
     const W = 560, H = 230, m = { l: 46, r: 10, t: 22, b: 30 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
@@ -273,7 +273,7 @@ reset();
       d.addEventListener("mousemove", e => show(e, `${nm[s]} · request ${i + 1}<br>TTFT <b>${tt.toFixed(2)} s</b> · <b>${v.toFixed(1)} tok/s</b>`)); d.addEventListener("mouseleave", hide); })); })();
   // draft-length sweeps: neutral bars (these runs are neither baseline nor final), chosen length outlined
   (() => { const SW = C.sweeps; if (!SW) return;
-    const c = card("Draft length: tuned, not guessed", "output TPM on the 40-request chat benchmark per draft length · acceptance = drafted tokens the main model kept", true);
+    const c = card("Draft length: tuned, not guessed", "output TPM on the 40-request chat benchmark per draft length · acceptance = drafted tokens the main model kept", true, true);
     const wrap = document.createElement("div"); wrap.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px"; c.append(wrap);
     const gmax = Math.max(...["mtp", "dflash"].flatMap(k => SW[k].pts.map(p => p.tpm)));  // one y-scale for both panels, so bar heights compare
     for (const key of ["mtp", "dflash"]) { const S = SW[key]; if (!S.pts.length) continue;
@@ -296,10 +296,10 @@ reset();
         hit.addEventListener("mouseleave", hide); }); } })();
   // the ladder: what each change added at that point in the sequence (repeats averaged)
   (() => { const L = C.ladder; if (!L.length) return;
-    const W = 1140, H = 260, m = { l: 56, r: 14, t: 24, b: 50 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const W = 1140, H = 272, m = { l: 56, r: 14, t: 24, b: 62 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
     const st = nice(Math.max(...L.map(d => d.tpm))); const max = Math.ceil(Math.max(...L.map(d => d.tpm)) * 1.12 / st) * st;
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "TPM by optimization step" },
-      card("What each change added", "output TPM on the 40-request chat benchmark, one change per step, averaged over repeats · each gain is measured at that point in the sequence, so it depends on the steps before it", true));
+      card("What each change added", "output TPM on the 40-request chat benchmark, one change per step, averaged over repeats · each gain is measured at that point in the sequence, so it depends on the steps before it", true, true));
     for (let v = 0; v <= max + 1e-9; v += st) { const y = m.t + ih - v / max * ih;
       el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: "var(--grid)" }, svg);
       el("text", { x: m.l - 6, y: y + 4, "text-anchor": "end" }, svg).textContent = v >= 1000 ? (v / 1000) + "k" : v; }
@@ -308,7 +308,9 @@ reset();
       const fill = i === 0 ? col.base : i === L.length - 1 ? col.best : "#55524d";  // baseline and final keep their colors; steps between are neutral
       el("path", { d: barPath(x, y, bw, h), fill }, svg);
       el("text", { x: x + bw / 2, y: y - 6, "text-anchor": "middle", class: "val" }, svg).textContent = d.tpm.toLocaleString() + (d.note ? " *" : "");
-      el("text", { x: x + bw / 2, y: H - 28, "text-anchor": "middle" }, svg).textContent = d.step;
+      const cut = d.step.length > 18 ? d.step.lastIndexOf(", ") : -1;  // long labels wrap onto two lines so neighbours don't collide
+      (cut > 0 ? [d.step.slice(0, cut + 1), d.step.slice(cut + 2)] : [d.step]).forEach((s, j, a) =>
+        el("text", { x: x + bw / 2, y: H - 28 - (a.length - 1 - j) * 14, "text-anchor": "middle" }, svg).textContent = s);
       if (i) { const prev = L[i - 1].tpm, pct = (d.tpm / prev - 1) * 100;
         el("text", { x: x + bw / 2, y: H - 12, "text-anchor": "middle" }, svg).textContent = Math.abs(pct) < 1.5 ? "tie (noise)" : (pct > 0 ? "+" : "") + Math.round(pct) + "%"; }
       const hit = el("rect", { x, y: m.t, width: bw, height: ih, fill: "transparent" }, svg);

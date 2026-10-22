@@ -19,13 +19,36 @@ Two runs, 40 real chat requests each, agreeing within 0.1%. That's **2.0× the d
 
 GSM8K is scored by the final stated answer (`rescore.py`); lm-eval's last-number rule reports 92% because it misreads answers like "**160 minutes**, or 2 hours and 40 minutes". The one real miss is the same question in every config. IFEval: 5 of the 10 misses are empty answers, where thinking used the whole 32,768-token budget on a constraint-heavy prompt; 90 of the 95 answered prompts pass. With 100 questions, expect about ±3-4 points.
 
+## Baseline vs optimized
+
+The same model, the same 40 chat prompts and the same accuracy suite, run on vLLM's defaults (vLLM 0.27.1, TP=2, no drafting) and on the optimized config.
+
+| | Baseline | Optimized | Change |
+|---|---|---|---|
+| Decode tok/s, p50 | 62.5 | **125.3** | 2.0× |
+| Decode tok/s, p5 (slowest 5%) | 61.1 | **98.3-98.9** | +61% |
+| TTFT p95 | 0.555 s | 0.574-0.575 s | +0.02 s (gate: 1 s) |
+| Output TPM | 3,703 | **7,151-7,158** | +93% |
+| Speed gate (p50 ≥ 60 tok/s, TTFT p95 < 1 s) | passes by 2.5 tok/s | passes by 65 tok/s | |
+| GSM8K Platinum | 99% | **99%** | same |
+| IFEval, prompt-level strict | 89% | **90%** | +1 pt |
+
+Accuracy is unchanged: both differences are well inside the ±3-4 points that 100 questions allow. Speculative decoding verifies every drafted token against the main model, so it changes speed, not the model. Outputs can still differ slightly between configs, which is why each one gets its own run. The baseline's IFEval misses include 7 empty answers, where thinking used the whole 32,768-token budget (the optimized config had 5); on the 93 it answered, it scored 89.
+
+**Race replay video:** [docs/race-replay.mp4](docs/race-replay.mp4), the two configs answering the same three prompts (chat, GSM8K, IFEval) side by side, rendered frame by frame at their recorded speed. They can't run at the same moment: each one uses both GPUs. Charts for every number on this page are in [docs/plots/](docs/plots/), and the interactive version is `race.html`, also served by `demo.py` at `/compare`.
+
+![Decode speed, typical](docs/plots/decode-speed-typical-p50.png)
+![Every request vs the gate thresholds](docs/plots/every-request-vs-the-gate-thresholds.png)
+![Accuracy](docs/plots/accuracy.png)
+![What each change added](docs/plots/what-each-change-added.png)
+
 ## What each change did
 
 Each row adds one change to the row above. Same 40-request chat benchmark throughout. Ranges are two runs of the same config.
 
 | # | Change | TTFT p95 | tok/s p50 | tok/s p5 | TPM | TPM vs previous | Accuracy (GSM8K / IFEval) |
 |---|---|---|---|---|---|---|---|
-| 0 | **Vanilla:** Qwen3.8-27B INT4, vLLM 0.27.1, TP=2, vLLM's defaults, no drafting | 0.555 s | 62.5 | 61.1 | 3,703 | | |
+| 0 | **Vanilla:** Qwen3.8-27B INT4, vLLM 0.27.1, TP=2, vLLM's defaults, no drafting | 0.555 s | 62.5 | 61.1 | 3,703 | | 99% / 89% |
 | 1 | + MTP drafting (the model's own head), 3 tokens | 0.599 s | 84.1 | 72.6 | 4,968 | +34% | |
 | 2 | + Triton attention, full CUDA graphs, BF16 KV cache | 0.576-0.584 s | 89.6-89.7 | 76.4-77.1 | 5,229-5,278 | +5-6% | |
 | 3 | MTP 3 → 2 draft tokens | 0.586 s | 89.2 | **82.0** | 5,294 | +1% (tie); better slow tail | 99% / 89% |
@@ -103,4 +126,13 @@ Needs `~/venvs/vllm032` (`uv venv ~/venvs/vllm032 --python 3.12 && uv pip instal
 | `suite.sh`, `eval.sh`, `tasks/`, `rescore.py` | Fixed accuracy suite and final-answer GSM8K scoring |
 | `levers.sh`, `dflash.sh`, `exl3.sh`, `tabby.sh`, `strata.sh` | The sweeps, engines and drafters tried (see RUNS.md) |
 | `demo.py`, `demo.html`, `grafana/` | Live demo page and dashboard |
+| `race.py`, `race.template.html`, `race_capture.sh` | Capture both configs on the same prompts, build the comparison page `race.html` |
+| `render_race.py`, `export_plots.py`, `finalize.sh` | Render the race to `docs/race-replay.mp4`, export each chart to `docs/plots/` |
 | `results/summary.jsonl` | One line per benchmark run, the source of every number here |
+
+## Next steps
+
+- **Concurrency.** Everything here is one request at a time, by design. Decode is memory-bound, so 2-4 concurrent streams should multiply total TPM while each stream stays above 60 tok/s. This is the largest gain left.
+- **Locked GPU clocks** (`nvidia-smi -lgc`) for every run. The ladder would then need no clock caveat.
+- **A profile of one decode step** (Nsight Systems). It would show what share of each token goes to the PCIe all-reduce without P2P, and whether one GPU plus the draft model beats TP=2 for a 19 GB model.
+- **A draft model tuned on chat data.** More drafted tokens kept per step is where the next 10-20% would come from.
