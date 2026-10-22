@@ -139,5 +139,5 @@ Earlier attempts, none of which produced scores:
 | GLM-5.3-Flash / DeepSeek-V4.1-Flash on project-maya | Comparable 2x3090 rigs report 44-53 tok/s, under the gate; the user chose to skip |
 | Google Colab (free T4, v5e-1 TPU) | 16 GB memory can't hold the 27B or the MoE candidates; lower bandwidth than one 3090 |
 | 350 W power limit | User rule: keep the 225 W cap |
-| Concurrency (batching, two replicas) | Out of scope for now: one client only. Also MTP lost 16% aggregate throughput at 16 clients in an earlier, unpublished study on this machine (`inference-explainer`) |
+| Concurrency (batching, two replicas) | Out of scope for now: one client only. Also MTP lost 16% aggregate throughput at 16 clients in an earlier study on this machine ([`inference-explainer`](https://github.com/BaoTNguyen/inference-explainer)) |
 | `--async-scheduling` | Already on by default in vLLM 0.27.1 with MTP (`config/vllm.py`); nothing to test |
