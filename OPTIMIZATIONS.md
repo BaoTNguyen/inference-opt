@@ -96,7 +96,8 @@ TTFT p95 is 0.58-0.60 s in every vLLM config, with p50 at 0.11-0.15 s. The tail 
 | Limit | Size | What would remove it |
 |---|---|---|
 | All-reduce through host memory (no P2P) | ~7 ms of the 27.5 ms step (estimate) | An NVLink bridge between the 3090s (stock drivers block GeForce P2P over PCIe) |
-| Draft acceptance | DFlash2 accepts 33.5% of its 7 drafts on chat (about 3.3 tokens per step) | Draft models trained on chat-like data, or tuning the block size (7 was the model card's default, not swept here) |
+| Draft model size and acceptance | DFlash2 accepts ~33% of its 7 drafts on chat. Draft lengths 4-6 were tried and lost TPM; a 4-bit draft model gained ~4% (accuracy suite pending) | A draft model trained on chat-like data, or the curated draft vocabulary the fastest published SGLang run uses |
+| Output layer in BF16 | ~1.27 GB per GPU read each step | An int8 output layer, as in `dbirks/Qwen3.8-27B-W4A16-AutoRound` (19.45 GB; untested here) |
 | 225 W cap | Bandwidth-bound decode loses little; compute-bound engines lose a lot (EXL3) | Out of scope by choice |
 | One request at a time | TPM = one stream's speed | Concurrency (batching or two replicas), out of scope |
 

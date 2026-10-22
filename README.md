@@ -10,6 +10,8 @@ The goal was the highest output tokens per minute (TPM) from the smartest model 
 
 That's **+88% TPM** over the same model and engine with no tuning (62.5 tok/s, 3,703 TPM). A back-to-back repeat gave 117.5 tok/s and 6,793 TPM. Across both pairs of runs, DFlash2 beats the model's built-in MTP drafting head on the same vLLM by **24-27%** (MTP: 5,470 and 5,483 TPM). DFlash2 varies more between runs (2.5%) than MTP (under 1%).
 
+**Faster, accuracy not yet validated:** swapping in a 4-bit draft model (`syvai/Qwen3.8-27B-DFlash2-W4A16`, 1.28 GB instead of 3.85 GB) reached **125.3 tok/s p50 and 7,151-7,158 TPM** in two runs (TTFT p95 0.57 s, 40/40), about **+4%**. It changes nothing in the main model, but speculative decoding isn't bit-exact (output token totals shifted by under 1%), so it needs its own accuracy suite before it replaces the headline. Run it with `DRAFT=~/models/qwen3.8-27b/dflash2-w4a16 ./serve.sh`.
+
 **Accuracy** on this exact config (fixed suite, first 100 questions each, one request at a time):
 
 | Benchmark | Score | MTP config (vLLM 0.27.1) | RedHat, same INT4 checkpoint |

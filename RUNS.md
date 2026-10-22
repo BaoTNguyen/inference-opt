@@ -68,6 +68,21 @@ Same settings as section 3 (Triton, full + piecewise graphs, BF16 KV), on vLLM 0
 
 MTP on 0.32 beat the same config on 0.27.1 by 3.3% at slightly lower clocks. The DFlash2 run's clocks were 9-12% higher than the MTP baseline's, so both were repeated back to back (the `-r2` rows). The clock gap came back the same way, so it's a property of DFlash2's work under the 225 W cap (it draws less power per clock), not luck. Over the two pairs, DFlash2 beats MTP by 24-27%. DFlash2 varied 2.5% between runs; MTP under 1%. The first DFlash2 start failed: FlashInfer JIT-compiles a top-k kernel for DFlash2's candidate selector and picked up the system `nvcc` 12.0 (`Ninja build failed`). Pointing `CUDA_HOME` at the installed CUDA 13.1 fixed it.
 
+### 6. One-hour lever sweep on the DFlash2 config
+
+One change per run against `v032-dflash2-k7` / `-r2` (6,967 / 6,793 TPM). All runs captured full CUDA graphs (`Capturing CUDA graphs (FULL)` in each log).
+
+| Label | Change | TTFT p95 | tok/s p50 | tok/s p5 | acc. | TPM | Clocks | Gate |
+|---|---|---|---|---|---|---|---|---|
+| `v032-dflash2-k5` | 5 draft tokens | 0.553 | 113.5 | 98.5 | 0.420 | 6,746 | 1545/1440 | PASS |
+| `v032-dflash2-k4` | 4 draft tokens | 0.580 | 116.4 | 97.4 | 0.494 | 6,681 | 1530/1410 | PASS |
+| `v032-dflash2-k7-fa` | FlashAttention instead of Triton | 0.569 | 114.4 | 94.6 | 0.326 | 6,759 | 1575/1455 | PASS |
+| `v032-dflash2-k7-fisam` | FlashInfer sampler on (`FI_SAMPLER=1`) | 0.579 | 119.6 | 94.3 | 0.324 | 6,786 | 1575/1455 | PASS |
+| **`v032-dflash2w4-k7`** | **W4A16 draft model** (`syvai/Qwen3.8-27B-DFlash2-W4A16`, rev `4d30ec7`, 1.28 GB) | 0.574 | **125.3** | 98.3 | 0.320 | **7,151** | 1590/1485 | PASS |
+| **`v032-dflash2w4-k7-r2`** | repeat | 0.575 | **125.3** | 98.9 | 0.320 | **7,158** | 1605/1485 | PASS |
+
+Only the 4-bit draft model helped: about +4% (+2.7% to +5.4% against the two BF16-draft runs), reproduced within 0.1%. It accepts slightly fewer drafts (32% vs 33.5%) but costs a third of the reads per step. Shorter drafts (4, 5) trade a little TPM for a slightly better slow tail. FlashAttention and the FlashInfer sampler were within noise of the baseline. Output-token totals differ between configs (e.g. 35,525 vs 35,769), which shows speculative decoding isn't bit-exact across draft models: the W4A16 config needs its own accuracy suite before it can be the headline.
+
 ### Note: peer-comparable run (not the headline)
 
 To compare with published dual-3090 results for this model (LocalMaxxing leaderboard runs, via the local-ai-registry), the best config was run on their workload shape: one ~1,000-token prompt, 512 output tokens, 1 warmup and 5 timed repeats, one request at a time. The prompt is `chat-272` from `data/chat.jsonl` (creative writing, outside the 40 benchmark prompts), written 5 times to `data/peer.jsonl`; run with `bench.py data/peer.jsonl --label peer-1024x512 -c 1 --warmup 1 --max-tokens 512`.
