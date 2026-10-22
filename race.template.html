@@ -171,10 +171,22 @@ function frame(now) {
     const lead = to >= tb ? "best" : "base", trail = lead === "best" ? "base" : "best";
     panes[lead].get("rank").textContent = "· #1"; panes[trail].get("rank").textContent = "· #2";
   }
-  if (live) raf = requestAnimationFrame(frame);
+  if (live && !window.RENDER) raf = requestAnimationFrame(frame);
 }
 
 $("#go").onclick = () => { reset(); t0 = performance.now(); raf = requestAnimationFrame(frame); };
+// video rendering (render_race.py): draw the replay of prompt i exactly as it looks t seconds in, no animation loop
+window.renderAt = (i, sec) => {
+  window.RENDER = true;
+  if (i !== pick) { pick = i; tabs.querySelectorAll("button:not(.go)").forEach((x, j) => x.setAttribute("aria-pressed", j === i)); }
+  reset(); t0 = performance.now() - sec * 1000; frame(performance.now());
+};
+if (new URLSearchParams(location.search).has("video")) {  // race window only, sized for 1920x1080
+  document.getElementById("charts").style.display = "none";
+  const w = document.querySelector(".win"); w.style.maxWidth = "1860px"; w.style.margin = "20px auto"; document.body.style.background = "#0c0c0c";
+  document.querySelectorAll(".body").forEach(b => { b.style.height = "720px"; b.style.fontSize = "16px";  // fills a 1080p frame });
+  $("#go").style.visibility = "hidden"; tabs.querySelector("a").style.display = "none";
+}
 reset();
 
 // ---------- comparison charts (all numbers from recorded runs, built into DATA.charts by race.py) ----------

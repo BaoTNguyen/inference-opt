@@ -22,7 +22,7 @@ from pathlib import Path
 
 import httpx
 
-PROMPTS = [("data/chat.jsonl", "chat-17"), ("data/gsm8k40.jsonl", "gsm8k-0"), ("data/ifeval40.jsonl", "ifeval-16")]
+PROMPTS = [("data/chat.jsonl", "chat-0"), ("data/gsm8k40.jsonl", "gsm8k-0"), ("data/ifeval40.jsonl", "ifeval-0")]  # long enough to watch
 OUT = Path("results/race")
 SIDES = {"base": "Baseline: vLLM 0.27.1 defaults, no drafting",
          "best": "Optimized: vLLM 0.32, DFlash2 W4A16 draft, full CUDA graphs"}
