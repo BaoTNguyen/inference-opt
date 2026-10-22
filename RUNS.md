@@ -96,6 +96,17 @@ To compare with published dual-3090 results for this model (LocalMaxxing leaderb
 
 On the same workload shape this setup decodes at about 68% of the fastest comparable vLLM run, and its speed barely changed from the 40-chat benchmark, so the workload doesn't explain the gap. The likely causes are setup differences: about 40% more power per card, a draft model one third the size (W4A16, 1.28 GB vs 3.85 GB), an int8 output layer, and fewer draft tokens. The peer's synthesized prompt may also draft more easily than this one (36% acceptance here; theirs isn't published). TTFT is in the same range as the peers at this prompt size. The quantized drafter and int8 output layer are the untried levers that stay within this project's 225 W rule.
 
+### Note: live demo runs and their overhead
+
+`demo.py` runs the 20-prompt mixed set (`data/demo.jsonl`: 7 chat, 7 GSM8K Platinum, 6 IFEval) through the same `bench.py` code while streaming to the page.
+
+| Label | Config | Conditions | TTFT p95 | tok/s p50 | tok/s p5 | TPM | Gate |
+|---|---|---|---|---|---|---|---|
+| `demo-1` | DFlash2 BF16 draft | browser page open | 0.176 | 140.1 | 87.8 | 6,882 | PASS |
+| `demo-final-1` | DFlash2 W4A16 draft (best) | browser page + OBS recording (the video) | 0.182 | 133.0 | 84.3 | 6,728 | PASS |
+
+On the 7 chat prompts shared with the benchmark, outputs were identical and the demo was slower by 3% with the page alone (`demo-1`) and by 11% while recording (`demo-final-1`): OBS at 1080p60 on the display GPU cost about 8%. The demo's median is higher than the benchmark's because math prompts draft easily (GSM8K median 188 tok/s); its p5 and TPM are lower because of the overhead, and its TTFT p95 is lower because the set has no long prompts.
+
 ## Accuracy runs
 
 Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, re-scored by final answer with `rescore.py`) + IFEval (prompt-level strict), first 100 each, 32,768-token budget, one request at a time.
