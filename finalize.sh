@@ -39,9 +39,9 @@ E
 uv run -q race.py build >/dev/null  # rebuild so the accuracy chart has the baseline bars
 uv run -q export_plots.py >/dev/null
 # privacy: nothing personal in any tracked or new file
-if git grep -n -I -E "REDACTED|REDACTED|REDACTED|REDACTED|REDACTED" -- . ':!finalize.sh' >/dev/null || grep -l -E "REDACTED|REDACTED|REDACTED" race.html results/race/*.json docs -r >/dev/null 2>&1; then
-  echo "PRIVACY: personal strings found"; grep -l -r -E "REDACTED|REDACTED|REDACTED" race.html results/race docs README.md RUNS.md 2>/dev/null; exit 1
-fi
+# patterns live in .privacy-patterns (git-ignored, one extended regex per line) so the list itself stays private
+[ -s .privacy-patterns ] || { echo "no .privacy-patterns"; exit 1; }
+if grep -r -l -I -E -f .privacy-patterns README.md RUNS.md race.html docs results; then echo "PRIVACY: personal strings found"; exit 1; fi
 git add README.md RUNS.md race.html docs results/race/base.json results/race/best.json results/summary.jsonl results/eval/base-acc export_plots.py finalize.sh
 git commit -q -F - <<'M'
 Baseline vs optimized: accuracy suite on the baseline, race replay video, chart images

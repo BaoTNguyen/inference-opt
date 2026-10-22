@@ -5,3 +5,4 @@ results/server-*.log
 results/*.log
 results/go-strata
 results/eval/**/samples_*.jsonl
+.privacy-patterns
