@@ -127,7 +127,7 @@ Needs `~/venvs/vllm032` (`uv venv ~/venvs/vllm032 --python 3.12 && uv pip instal
 | `levers.sh`, `dflash.sh`, `exl3.sh`, `tabby.sh`, `strata.sh` | The sweeps, engines and drafters tried (see RUNS.md) |
 | `demo.py`, `demo.html`, `grafana/` | Live demo page and dashboard |
 | `race.py`, `race.template.html`, `race_capture.sh` | Capture both configs on the same prompts, build the comparison page `race.html` |
-| `render_race.py`, `export_plots.py`, `export_summary.py`, `finalize.sh` | Render the race to `docs/race-replay.mp4`, export each chart to `docs/plots/` and the key ones on one image, `docs/summary.png` |
+| `render_race.py`, `export_plots.py`, `export_summary.py`, `finalize.sh` | Render the race to `docs/race-replay.mp4`, export each chart to `docs/plots/` and the gate metrics plus accuracy on one image, `docs/summary.png` |
 | `results/summary.jsonl` | One line per benchmark run, the source of every number here |
 
 ## Next steps
