@@ -56,6 +56,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(body)
+        elif path == "/compare":  # baseline-vs-optimized replay and charts, built by race.py
+            f = Path(__file__).parent / "race.html"
+            if not f.exists():
+                return self.send_error(404, "run: uv run race.py build")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(f.read_bytes())
         elif path in ("/", "/index.html"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")

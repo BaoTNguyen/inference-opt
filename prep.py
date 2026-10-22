@@ -7,7 +7,9 @@ so a 64-client sweep never runs out). Run: uv run prep.py
 
 data/demo.jsonl (uv run prep.py --demo): 20 prompts for demo.py, evenly spaced across the three benchmarks used:
 7 of the 40 speed-benchmark chat prompts, 7 of the 100 GSM8K Platinum and 6 of the 100 IFEval questions the accuracy
-suite runs, interleaved chat / GSM8K / IFEval. Needs data/chat.jsonl."""
+suite runs, interleaved chat / GSM8K / IFEval. Needs data/chat.jsonl.
+
+data/gsm8k40.jsonl, data/ifeval40.jsonl (uv run prep.py --bench3): the first 40 accuracy-suite questions of each, for speed runs."""
 import sys
 import json, random
 from pathlib import Path
@@ -42,8 +44,25 @@ def demo():
     print("wrote data/demo.jsonl:", " ".join(r["id"] for r in rows))
 
 
+def bench3():
+    """data/gsm8k40.jsonl and data/ifeval40.jsonl: the first 40 of the 100 questions the accuracy suite grades,
+    in bench.py's format (GSM8K in the eval's prompt template), so speed runs cover all three benchmarks."""
+    for name, rows in (("gsm8k40", [{"id": f"gsm8k-{i}", "prompt": f"Q: {r['question']}\nA: Let's think step by step."}
+                                    for i, r in enumerate(hf_rows("madrylab/gsm8k-platinum", "main", "test", 40))]),
+                       ("ifeval40", [{"id": f"ifeval-{i}", "prompt": r["prompt"]}
+                                     for i, r in enumerate(hf_rows("google/IFEval", "default", "train", 40))])):
+        assert len(rows) == 40
+        with open(f"data/{name}.jsonl", "w") as f:
+            for r in rows:
+                f.write(json.dumps({**r, "max_tokens": 1024}, ensure_ascii=False) + "\n")
+        print(f"wrote data/{name}.jsonl")
+
+
 if "--demo" in sys.argv:
     demo()
+    sys.exit()
+if "--bench3" in sys.argv:
+    bench3()
     sys.exit()
 
 random.seed(0)

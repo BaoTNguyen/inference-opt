@@ -33,7 +33,7 @@ Each row adds one change to the row above. Same 40-request chat benchmark throug
 | 5 | MTP → DFlash2 draft model (BF16), 7 tokens per block | 0.579-0.580 s | 117.5-121.6 | 94.4-96.4 | 6,793-6,967 | +24-27% | 99% / 91% |
 | 6 | **DFlash2 draft model BF16 → W4A16** | **0.574-0.575 s** | **125.3** | **98.3-98.9** | **7,151-7,158** | **+3-5%** | **99% / 90%** |
 
-TTFT stayed between 0.55 and 0.60 s through every change (the gate is 1 s). The slow tail (p5) rose from 61 to 98 tok/s along with the median. Why each change helps is in [OPTIMIZATIONS.md](OPTIMIZATIONS.md). Every run, including those that lost or failed, is in [RUNS.md](RUNS.md).
+How to read it: each gain is measured on top of the steps before it, so it depends on order (full CUDA graphs, for example, help more once drafting is on). Step 2 changed three settings together. Step 3 is within run-to-run noise (~1%). The vanilla run happened to hold 11-15% lower GPU clocks than step 1, so part of step 1's +34% is clock. TTFT stayed between 0.55 and 0.60 s through every change (the gate is 1 s). The slow tail (p5) rose from 61 to 98 tok/s along with the median. Why each change helps is in [OPTIMIZATIONS.md](OPTIMIZATIONS.md). Every run, including those that lost or failed, is in [RUNS.md](RUNS.md).
 
 ## Hardware
 

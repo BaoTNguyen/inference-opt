@@ -56,7 +56,9 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflo
 svg { width: 100%; height: 120px; display: block; }
 .gpu { font-family: ui-monospace, monospace; font-size: 13px; }
 #done { display: none; padding: 10px 14px; font-weight: 600; }
-#run { margin-left: auto; font: inherit; font-weight: 650; padding: 6px 18px; border-radius: 8px; border: 1px solid var(--accent);
+#cmp { margin-left: auto; color: var(--accent); font-size: 13px; text-decoration: none; }
+#cmp:hover { text-decoration: underline; }
+#run { font: inherit; font-weight: 650; padding: 6px 18px; border-radius: 8px; border: 1px solid var(--accent);
        background: var(--accent); color: #fff; cursor: pointer; }
 #run:disabled { background: transparent; color: var(--muted); border-color: var(--line); cursor: default; }
 #run:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -66,6 +68,7 @@ svg { width: 100%; height: 120px; display: block; }
 <header>
   <h1>Live inference run</h1>
   <span class="meta" id="meta">connecting…</span>
+  <a id="cmp" href="/compare">Baseline vs optimized →</a>
   <button id="run" type="button" disabled>Run</button>
 </header>
 <main>
