@@ -59,7 +59,7 @@ Same settings as section 3 (Triton, full + piecewise graphs, BF16 KV), on vLLM 0
 | Label | Speculation | TTFT p50 | TTFT p95 | tok/s p50 | tok/s p5 | acc. | TPM | Clocks | Gate |
 |---|---|---|---|---|---|---|---|---|---|
 | `v032-best-k2` | MTP, 2 draft tokens | 0.125 | 0.571 | 92.2 | 85.1 | 0.630 | 5,470 | 1440/1305 | PASS |
-| **`v032-dflash2-k7`** (best) | **DFlash2, 7 per block** | 0.128 | 0.579 | **121.6** | **96.4** | 0.335 | **6,967** | 1575/1470 | PASS |
+| **`v032-dflash2-k7`** | **DFlash2, 7 per block** | 0.128 | 0.579 | **121.6** | **96.4** | 0.335 | **6,967** | 1575/1470 | PASS |
 | `v032-best-k2-r2` (back-to-back repeat) | MTP, 2 draft tokens | 0.125 | 0.573 | 92.4 | 85.2 | 0.630 | 5,483 | 1440/1335 | PASS |
 | `v032-dflash2-k7-r2` (back-to-back repeat) | DFlash2, 7 per block | 0.131 | 0.580 | 117.5 | 94.4 | 0.335 | 6,793 | 1575/1455 | PASS |
 | `demo-final` (live recording via `demo.py`) | DFlash2, 7 per block, first 8 prompts | 0.135 | 0.242 | 95.0 | 86.4 | 0.287 | 6,058 | - | PASS |
@@ -81,7 +81,7 @@ One change per run against `v032-dflash2-k7` / `-r2` (6,967 / 6,793 TPM). All ru
 | **`v032-dflash2w4-k7`** | **W4A16 draft model** (`syvai/Qwen3.8-27B-DFlash2-W4A16`, rev `4d30ec7`, 1.28 GB) | 0.574 | **125.3** | 98.3 | 0.320 | **7,151** | 1590/1485 | PASS |
 | **`v032-dflash2w4-k7-r2`** | repeat | 0.575 | **125.3** | 98.9 | 0.320 | **7,158** | 1605/1485 | PASS |
 
-Only the 4-bit draft model helped: about +4% (+2.7% to +5.4% against the two BF16-draft runs), reproduced within 0.1%. It accepts slightly fewer drafts (32% vs 33.5%) but costs a third of the reads per step. Shorter drafts (4, 5) trade a little TPM for a slightly better slow tail. FlashAttention and the FlashInfer sampler were within noise of the baseline. Output-token totals differ between configs (e.g. 35,525 vs 35,769), which shows speculative decoding isn't bit-exact across draft models: the W4A16 config needs its own accuracy suite before it can be the headline.
+Only the 4-bit draft model helped: about +4% (+2.7% to +5.4% against the two BF16-draft runs), reproduced within 0.1%. It accepts slightly fewer drafts (32% vs 33.5%) but costs a third of the reads per step. Shorter drafts (4, 5) trade a little TPM for a slightly better slow tail. FlashAttention and the FlashInfer sampler were within noise of the baseline. Output-token totals differ between configs (e.g. 35,525 vs 35,769), which shows speculative decoding isn't bit-exact across draft models, so the W4A16 config got its own accuracy suite: GSM8K Platinum 99%, IFEval 90%. It's now the headline and `serve.sh`'s default.
 
 ### Note: peer-comparable run (not the headline)
 
@@ -103,7 +103,8 @@ Fixed suite: GSM8K Platinum (`tasks/gsm8k_platinum_think.yaml`, re-scored by fin
 | Label | Config | GSM8K Platinum | IFEval | Status |
 |---|---|---|---|---|
 | `q27-best-k2` | MTP 2 draft tokens, vLLM 0.27.1 | **99%** final answer (lm-eval flexible-extract: 91%) | **89%** (6 empty answers: thinking hit 32k) | done, 14:37-15:50 |
-| **`v032-dflash2-k7`** | **DFlash2, vLLM 0.32 (best)** | **99%** final answer (flexible-extract: 92%) | **91%** (2 empty answers) | done, 16:26-16:54 |
+| `v032-dflash2-k7` | DFlash2 BF16 draft, vLLM 0.32 | **99%** final answer (flexible-extract: 92%) | **91%** (2 empty answers) | done, 16:26-16:54 |
+| **`v032-dflash2w4-k7`** | **DFlash2 W4A16 draft, vLLM 0.32 (best)** | **99%** final answer (flexible-extract: 92%) | **90%** (5 empty answers) | done, 19:16-19:49 |
 | reference | RedHat model card, INT4, full test sets | 96.77% | 91.93% | published |
 
 The 9 flexible-extract misses on GSM8K: 8 were correct answers that the last-number rule misread ("**$75.00** on yogurt over 30 days" read as 30; "$26.00" not matched to 26), and 1 was wrong (40% for 60%). IFEval's 11 misses: 6 empty answers on constraint-heavy prompts (forbidden words, lowercase, JSON, quoting, Marathi), 3 letter-frequency counts, 1 highlighted-sections count, 1 repeat-the-prompt with no commas.

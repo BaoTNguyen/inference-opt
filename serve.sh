@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One vLLM server; every knob is an env var so sweep.sh can A/B them.
-#   ./serve.sh                          the measured best: Qwen3.8-27B, TP=2, DFlash2 block drafting (7 tokens),
-#                                       Triton + full CUDA graphs + BF16 KV, on vLLM 0.32 (6,967 TPM)
+#   ./serve.sh                          the measured best: Qwen3.8-27B, TP=2, DFlash2 W4A16 draft model (7 tokens),
+#                                       Triton + full CUDA graphs + BF16 KV, on vLLM 0.32 (7,151-7,158 TPM)
+#   DRAFT=~/models/qwen3.8-27b/dflash2 ./serve.sh   the BF16 DFlash2 draft model (6,793-6,967 TPM)
 #   SPEC=mtp ./serve.sh                 the model's own MTP head instead (2 draft tokens; keep K in 1-3 for MTP)
 #   ATTN= CG= KV= ./serve.sh            vLLM's own picks (FlashInfer, piecewise graphs, FP8 KV)
 #   VLLM=vllm SPEC=mtp ./serve.sh       the system vLLM 0.27.1 (DFlash2 needs >= 0.32)
@@ -18,11 +19,11 @@ case $M in
   # 25 GB, needs TP=2; skip the vision tower
   qwen) W=cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit; EXTRA=(--reasoning-parser qwen3 --language-model-only) ;;
   # smartest that fits: dense hybrid, 19 GB INT4 (ships an FP8 KV scheme), has MTP. Measured best (2026-10-21):
-  # DFlash2 on vLLM 0.32 (6,967 TPM) > MTP k=2 on 0.32 (5,470) > MTP k=2 on 0.27.1 (5,294); Triton + full CUDA
+  # DFlash2 W4A16 draft (7,155 TPM) > BF16 draft (6,880) > MTP k=2 on 0.32 (5,477) > on 0.27.1 (5,294); Triton + full CUDA
   # graphs + BF16 KV beat vLLM's picks by 6.5%. Set any of these to empty to drop it.
   q27) W=$HOME/models/qwen3.8-27b/int4; EXTRA=(--reasoning-parser qwen3 --language-model-only)
        : "${ATTN=TRITON_ATTN}" "${CG=FULL_AND_PIECEWISE}" "${KV=bfloat16}" "${SPEC=dflash}"
-       : "${DRAFT=$HOME/models/qwen3.8-27b/dflash2}" "${VLLM=$HOME/venvs/vllm032/bin/vllm}" ;;
+       : "${DRAFT=$HOME/models/qwen3.8-27b/dflash2-w4a16}" "${VLLM=$HOME/venvs/vllm032/bin/vllm}" ;;
   *) echo "unknown M=$M"; exit 1 ;;
 esac
 [ "$TP" -gt 1 ] && GPU=$(seq -s, 0 $((TP - 1)))

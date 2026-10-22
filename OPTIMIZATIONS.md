@@ -1,14 +1,16 @@
 # What each setting contributed
 
-The best run decodes at 121.6 tok/s per request and 6,967 TPM. The same model and engine with no tuning did 62.5 tok/s and 3,703 TPM. This file explains where the +88% came from, what limits the rest, and which ideas didn't pay off. The numbers are from [RUNS.md](RUNS.md).
+The best run decodes at 125.3 tok/s per request and 7,151-7,158 TPM. The same model and engine untuned did 62.5 tok/s and 3,703 TPM. This file explains where the +93% came from, what limits the rest, and which ideas didn't pay off. The numbers are from [RUNS.md](RUNS.md); the README has the same ladder with every metric.
 
-| Step | tok/s p50 | TPM | Change in TPM |
-|---|---|---|---|
-| Untuned: vLLM 0.27.1, TP=2, no drafting | 62.5 | 3,703 | |
-| + MTP drafting, 2-3 tokens | 81.4-84.1 | 4,725-4,968 | +28-34% |
-| + Triton attention, full CUDA graphs, BF16 KV | 89.2 | 5,294 | +7% |
-| + vLLM 0.32.0 | 92.2 | 5,470 | +3% |
-| + DFlash2 block drafting instead of MTP | **117.5-121.6** | **6,793-6,967** | **+24-27%** |
+| # | Change | tok/s p50 | TPM | TPM vs previous | Section |
+|---|---|---|---|---|---|
+| 0 | Vanilla: vLLM 0.27.1, TP=2, INT4, no drafting | 62.5 | 3,703 | | [Frame](#the-frame-one-request-so-speed-per-step-is-everything), 1, 2 |
+| 1 | + MTP drafting, 3 tokens | 84.1 | 4,968 | +34% | 3 |
+| 2 | + Triton attention, full CUDA graphs, BF16 KV | 89.6-89.7 | 5,229-5,278 | +5-6% | 4 |
+| 3 | MTP 3 → 2 tokens | 89.2 | 5,294 | tie; better slow tail | 5 |
+| 4 | + vLLM 0.32 | 92.2-92.4 | 5,470-5,483 | +3% | 6 |
+| 5 | MTP → DFlash2 draft model (BF16) | 117.5-121.6 | 6,793-6,967 | +24-27% | 7 |
+| 6 | DFlash2 draft model BF16 → W4A16 | **125.3** | **7,151-7,158** | **+3-5%** | 8 |
 
 ## The frame: one request, so speed per step is everything
 
@@ -80,6 +82,14 @@ DFlash2 guesses worse per token (a third of its drafts are accepted, against nea
 
 The draft model's memory leaves 93,762 tokens of KV cache, against 201,523 with MTP, still far more than a 16k chat needs. The DFlash2 runs held 9-12% higher GPU clocks than the MTP runs, in both the original and a back-to-back repeat. Under a 225 W cap the GPU picks its clock by power draw, and DFlash2's work draws less per clock, so the higher clock is part of what it delivers. Over both pairs the gain is 24-27% (6,967 and 6,793 TPM against 5,470 and 5,483).
 
+## 8. A 4-bit draft model: +3-5%
+
+The DFlash2 draft model's weights are read on every step. `syvai/Qwen3.8-27B-DFlash2-W4A16` stores the same draft model with 4-bit weights (W4A16: 4-bit weights, 16-bit math): 1.28 GB instead of 3.85 GB, so each step reads about 1.3 GB less per GPU. It guesses very slightly worse (32% of drafts accepted vs 33.5%), but the cheaper step wins: 125.3 tok/s and 7,151 / 7,158 TPM in two runs, against 6,793-6,967 with the BF16 draft. The fastest published dual-3090 vLLM run of this model uses the same draft model.
+
+Speculative decoding is lossless in exact arithmetic, but not bit-exact in practice: a different draft model changes how many tokens each verify pass covers, which shifts floating-point rounding, and some temperature-0 answers take a different path (output-token totals moved by under 1%). So this config got its own accuracy suite: GSM8K Platinum 99%, IFEval 90%, against 99% / 91% with the BF16 draft, within the ±3-4 points that 100 questions allow.
+
+In the same sweep, draft lengths 4 and 5 lost 3-4% TPM (better slow tail, fewer tokens per step), and FlashAttention instead of Triton and the FlashInfer sampler were within noise. All captured full CUDA graphs.
+
 ## Settings that don't move the number
 
 - **Async scheduling:** already on in every run. It's vLLM 0.27.1's default with MTP.
@@ -96,7 +106,7 @@ TTFT p95 is 0.58-0.60 s in every vLLM config, with p50 at 0.11-0.15 s. The tail 
 | Limit | Size | What would remove it |
 |---|---|---|
 | All-reduce through host memory (no P2P) | ~7 ms of the 27.5 ms step (estimate) | An NVLink bridge between the 3090s (stock drivers block GeForce P2P over PCIe) |
-| Draft model size and acceptance | DFlash2 accepts ~33% of its 7 drafts on chat. Draft lengths 4-6 were tried and lost TPM; a 4-bit draft model gained ~4% (accuracy suite pending) | A draft model trained on chat-like data, or the curated draft vocabulary the fastest published SGLang run uses |
+| Draft acceptance | DFlash2 accepts ~32% of its 7 drafts on chat. Draft lengths 4 and 5 lost TPM; the 4-bit draft model is already in use | A draft model trained on chat-like data, or the curated draft vocabulary the fastest published SGLang run uses |
 | Output layer in BF16 | ~1.27 GB per GPU read each step | An int8 output layer, as in `dbirks/Qwen3.8-27B-W4A16-AutoRound` (19.45 GB; untested here) |
 | 225 W cap | Bandwidth-bound decode loses little; compute-bound engines lose a lot (EXL3) | Out of scope by choice |
 | One request at a time | TPM = one stream's speed | Concurrency (batching or two replicas), out of scope |
