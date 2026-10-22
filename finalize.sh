@@ -41,8 +41,9 @@ uv run -q export_plots.py >/dev/null
 # privacy: nothing personal in any tracked or new file
 # patterns live in .privacy-patterns (git-ignored, one extended regex per line) so the list itself stays private
 [ -s .privacy-patterns ] || { echo "no .privacy-patterns"; exit 1; }
-if grep -r -l -I -E -f .privacy-patterns README.md RUNS.md race.html docs results; then echo "PRIVACY: personal strings found"; exit 1; fi
 git add README.md RUNS.md race.html docs results/race/base.json results/race/best.json results/summary.jsonl results/eval/base-acc export_plots.py finalize.sh
+# scan what git will actually commit (staged + tracked), not ignored local logs
+if git grep --cached -l -I -E -f .privacy-patterns; then echo "PRIVACY: personal strings found"; exit 1; fi
 git commit -q -F - <<'M'
 Baseline vs optimized: accuracy suite on the baseline, race replay video, chart images
 

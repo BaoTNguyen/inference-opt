@@ -18,6 +18,7 @@ with sync_playwright() as pw:
     b = pw.chromium.launch()
     pg = b.new_page(viewport={"width": 1500, "height": 1000}, device_scale_factor=2)  # 2x for crisp images
     pg.goto(Path("race.html").resolve().as_uri())
+    pg.add_style_tag(content="html, body { background: #0c0c0c !important; }")  # cards end on a fractional pixel; keep that edge row dark
     for card in pg.query_selector_all(".card"):
         title = card.query_selector("h3").inner_text()
         card.screenshot(path=str(OUT / f"{slug(title)}.png"))
