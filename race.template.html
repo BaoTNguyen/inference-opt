@@ -152,7 +152,7 @@ function frame(now) {
     const last = p.i ? ev[p.i - 1] : null, n = last && last[3] ? last[3] : 0;
     if (p.span) p.span.classList.toggle("cursor", p.i < ev.length);
     if (r.ttft != null && t >= r.ttft) p.get("ttft").textContent = r.ttft.toFixed(2) + "s";
-    p.get("tok").textContent = n;
+    p.get("tok").textContent = (r.tokens_estimated && p.i < ev.length ? "≈" : "") + n;  // estimated from text length if the server sent no running count
     p.get("fill").style.width = (100 * Math.min(1, n / r.tokens)) + "%";
     if (p.i >= ev.length) {
       if (!p.done) { p.done = true; p.get("tps").textContent = r.decode_tps.toFixed(1); p.get("el").textContent = r.latency.toFixed(1) + "s";
@@ -208,7 +208,7 @@ reset();
         const b = el("path", { d: barPath(si ? cx + 1 : cx - 1 - bw, y, bw, h), fill: col[s] }, svg);   // 2px gap between the pair
         el("text", { x: (si ? cx + 1 : cx - 1 - bw) + bw / 2, y: y - 6, "text-anchor": "middle", class: "val" }, svg).textContent = fmt(v);
         const hit = el("rect", { x: si ? cx + 1 : cx - 1 - bw - 4, y: m.t, width: bw + 4, height: ih, fill: "transparent" }, svg);
-        hit.addEventListener("mousemove", e => show(e, `${g.name} · ${nm[s]}<br>${title}: <b>${fmt(v)}</b>${g.v[s].label ? `<br><span style="color:var(--faint)">${g.v[s].label}</span>` : ""}`));
+        hit.addEventListener("mousemove", e => show(e, `${g.name} · ${nm[s]}<br>${title}: <b>${fmt(v)}</b>${g.v[s].label ? `<br><span style="color:var(--faint)">${g.v[s].runs > 1 ? "mean of " + g.v[s].runs + " runs: " : ""}${g.v[s].label}</span>` : ""}`));
         hit.addEventListener("mouseleave", hide); }); });
     if (ref) { const y = m.t + ih - ref.v / max * ih;
       el("line", { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: "var(--ink)", "stroke-dasharray": "4 4", "stroke-width": 1 }, svg);
@@ -218,7 +218,7 @@ reset();
   const n1 = (v, axis) => axis ? String(Math.round(v)) : v.toFixed(1), tpm = (v, axis) => axis ? (v >= 1000 ? (v / 1000) + "k" : String(v)) : Math.round(v).toLocaleString();
   grouped("Decode speed, typical (p50)", "tok/s per request, 40 requests · higher is better", groups, "p50", n1, { v: 60, label: "gate ≥ 60" });
   grouped("Decode speed, slowest 5% (p5)", "tok/s per request · higher is better", groups, "p5", n1);
-  grouped("Time to first token, p95", "seconds · lower is better", groups, "ttft95", (v, axis) => axis ? v.toFixed(2) : v.toFixed(2) + "s", { v: 1, label: "gate < 1 s" });
+  grouped("Time to first token, p95", "time to the first streamed token, thinking included · seconds · lower is better", groups, "ttft95", (v, axis) => axis ? v.toFixed(2) : v.toFixed(2) + "s", { v: 1, label: "gate < 1 s" });
   grouped("Output tokens per minute", "one request at a time · higher is better", groups, "tpm", tpm);
   if (C.acc.base || C.acc.best) {
     const ag = ["GSM8K Platinum", "IFEval"].map(name => ({ name, v: { base: C.acc.base && { a: C.acc.base[name] }, best: C.acc.best && { a: C.acc.best[name] } } }));
@@ -228,12 +228,12 @@ reset();
   (() => { if (!C.dist.base.length) return;
     const W = 1140, H = 150, m = { l: 92, r: 14, t: 16, b: 26 }, iw = W - m.l - m.r;
     const all = [...C.dist.base, ...C.dist.best]; const step = nice(Math.max(...all)); const max = Math.ceil(Math.max(...all) * 1.05 / step) * step;
-    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Per-request decode speed, chat" }, card("Every chat request", "decode tok/s of each of the 40 chat requests · dots are jittered vertically", true));
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Per-request decode speed, chat" }, card("Every chat request", "decode tok/s of each of the 40 chat requests · dots jittered vertically · the gate applies to the median, not each request", true));
     const X = v => m.l + v / max * iw;
     for (let v = 0; v <= max + 1e-9; v += step) { el("line", { x1: X(v), x2: X(v), y1: m.t, y2: H - m.b, stroke: "var(--grid)" }, svg);
       el("text", { x: X(v), y: H - 8, "text-anchor": "middle" }, svg).textContent = Math.round(v); }
     el("line", { x1: X(60), x2: X(60), y1: m.t, y2: H - m.b, stroke: "var(--ink)", "stroke-dasharray": "4 4" }, svg);
-    el("text", { x: X(60) + 4, y: m.t + 10 }, svg).textContent = "gate 60";
+    el("text", { x: X(60) + 4, y: m.t + 10 }, svg).textContent = "60 tok/s";
     [["base", 0], ["best", 1]].forEach(([s, row]) => { const yc = m.t + 26 + row * 50;
       el("text", { x: m.l - 10, y: yc + 4, "text-anchor": "end" }, svg).textContent = nm[s];
       C.dist[s].forEach((v, i) => { const y = yc + ((i * 37) % 17 - 8);
@@ -246,16 +246,16 @@ reset();
     const xmax = Math.ceil(Math.max(1.1, ...all.map(d => d[0])) * 10) / 10, ys = nice(Math.max(...all.map(d => d[1])));
     const ymax = Math.ceil(Math.max(...all.map(d => d[1])) * 1.08 / ys) * ys;
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Decode speed against time to first token, every chat request" },
-      card("Every request vs both gates", "each dot is one chat request · pass = left of the TTFT line and above the speed line"));
+      card("Every request vs the gate thresholds", "each dot is one chat request · the gate itself is on TTFT p95 and median speed, so the lines are reference levels, not per-request pass marks"));
     const X = v => m.l + v / xmax * iw, Y = v => m.t + ih - v / ymax * ih;
     for (let v = 0; v <= ymax + 1e-9; v += ys) { el("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: "var(--grid)" }, svg);
       el("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }, svg).textContent = Math.round(v); }
     for (let v = 0; v <= xmax + 1e-9; v += 0.25) el("text", { x: X(v), y: H - 22, "text-anchor": "middle" }, svg).textContent = v.toFixed(2);
     el("text", { x: m.l + iw / 2, y: H - 6, "text-anchor": "middle" }, svg).textContent = "time to first token (s)";
     el("line", { x1: X(1), x2: X(1), y1: m.t, y2: m.t + ih, stroke: "var(--ink)", "stroke-dasharray": "4 4" }, svg);
-    el("text", { x: X(1) - 4, y: m.t + 10, "text-anchor": "end" }, svg).textContent = "TTFT gate 1 s";
+    el("text", { x: X(1) - 4, y: m.t + 10, "text-anchor": "end" }, svg).textContent = "TTFT 1 s";
     el("line", { x1: m.l, x2: W - m.r, y1: Y(60), y2: Y(60), stroke: "var(--ink)", "stroke-dasharray": "4 4" }, svg);
-    el("text", { x: X(1) - 6, y: Y(60) + 15, "text-anchor": "end" }, svg).textContent = "speed gate 60 tok/s";  // below the line, right of the dots
+    el("text", { x: X(1) - 6, y: Y(60) + 15, "text-anchor": "end" }, svg).textContent = "60 tok/s";  // below the line, right of the dots
     ["base", "best"].forEach(s => P[s].forEach(([tt, v], i) => {
       const d = el("circle", { cx: X(tt), cy: Y(v), r: 4.5, fill: col[s], stroke: "#0c0c0c", "stroke-width": 2 }, svg);
       d.addEventListener("mousemove", e => show(e, `${nm[s]} · request ${i + 1}<br>TTFT <b>${tt.toFixed(2)} s</b> · <b>${v.toFixed(1)} tok/s</b>`)); d.addEventListener("mouseleave", hide); })); })();
@@ -263,9 +263,10 @@ reset();
   (() => { const SW = C.sweeps; if (!SW) return;
     const c = card("Draft length: tuned, not guessed", "output TPM on the 40-request chat benchmark per draft length · acceptance = drafted tokens the main model kept", true);
     const wrap = document.createElement("div"); wrap.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px"; c.append(wrap);
+    const gmax = Math.max(...["mtp", "dflash"].flatMap(k => SW[k].pts.map(p => p.tpm)));  // one y-scale for both panels, so bar heights compare
     for (const key of ["mtp", "dflash"]) { const S = SW[key]; if (!S.pts.length) continue;
       const W = 540, H = 230, m = { l: 46, r: 10, t: 34, b: 44 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
-      const st = nice(Math.max(...S.pts.map(p => p.tpm))), max = Math.ceil(Math.max(...S.pts.map(p => p.tpm)) * 1.12 / st) * st;
+      const st = nice(gmax), max = Math.ceil(gmax * 1.12 / st) * st;
       const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": S.title }, wrap);
       el("text", { x: m.l, y: 14 }, svg).textContent = S.title;
       for (let v = 0; v <= max + 1e-9; v += st) { const y = m.t + ih - v / max * ih;
@@ -305,8 +306,10 @@ reset();
     const n = document.createElement("p"); n.innerHTML = notes; n.style.cssText = "margin:6px 0 0;font-size:11px;color:var(--faint);line-height:1.6"; svg.parentNode.append(n); })();
   // table view: every number above
   const rows = [["Benchmark", "Config", "TTFT p95", "tok/s p50", "tok/s p5", "TPM", "Accuracy"]];
-  for (const g of groups) for (const s of ["base", "best"]) { const v = g.v[s]; if (!v) continue;
-    const a = C.acc[s] && C.acc[s][g.name]; rows.push([g.name, nm[s], v.ttft95.toFixed(2) + "s", v.p50.toFixed(1), v.p5.toFixed(1), v.tpm.toLocaleString(), a != null ? a + "%" : "–"]); }
+  const names = [...new Set([...groups.map(g => g.name), "GSM8K Platinum", "IFEval"])];  // every benchmark with speed or accuracy
+  for (const name of names) for (const s of ["base", "best"]) { const v = B[name] && B[name][s], a = C.acc[s] && C.acc[s][name];
+    if (!v && a == null) continue;
+    rows.push([name, nm[s], v ? v.ttft95.toFixed(2) + "s" : "–", v ? v.p50.toFixed(1) : "–", v ? v.p5.toFixed(1) : "–", v ? v.tpm.toLocaleString() : "–", a != null ? a + "%" : (v ? "no answer key" : "running")]); }
   $("#ctable").innerHTML = rows.map((r, i) => `<tr>${r.map(c => i ? `<td>${c}</td>` : `<th>${c}</th>`).join("")}</tr>`).join("");
 })();
 </script>

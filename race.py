@@ -71,10 +71,13 @@ def charts(a):
     S = {}
     for l in open("results/summary.jsonl"):
         r = json.loads(l); S[r["label"]] = r  # last run of a label wins
-    def row(lab):
-        r = S.get(lab)
-        return r and {"label": lab, "tpm": r["tpm"], "p50": r["decode_tps_p50"], "p5": r["decode_tps_p5"],
-                      "ttft95": r["ttft_p95"], "n": r["n_ok"] + r["n_err"], "pass": r["pass"]}
+    def row(lab):  # the label plus its "-r2" repeat if one exists, averaged (same rule as the ladder)
+        rs = [S[l] for l in (lab, lab + "-r2") if l in S]
+        if not rs:
+            return None
+        avg = lambda k: sum(r[k] for r in rs) / len(rs)
+        return {"label": " + ".join(r["label"] for r in rs), "tpm": round(avg("tpm")), "p50": avg("decode_tps_p50"),
+                "p5": avg("decode_tps_p5"), "ttft95": avg("ttft_p95"), "runs": len(rs), "pass": all(r["pass"] for r in rs)}
     bench = {"Chat": {"base": row(a.base_label), "best": row(a.best_label)},
              "GSM8K Platinum": {"base": row("base-gsm8k"), "best": row("best-gsm8k")},
              "IFEval": {"base": row("base-ifeval"), "best": row("best-ifeval")}}
@@ -125,10 +128,17 @@ def charts(a):
 def build(a):
     data = {s: json.loads((OUT / f"{s}.json").read_text()) for s in SIDES}
     S = {json.loads(l)["label"]: json.loads(l) for l in open("results/summary.jsonl")}
-    for s, lab in (("base", a.base_label), ("best", a.best_label)):  # header line: the full 40-request benchmark
-        r = S[lab]
-        data[s]["bench"] = {"label": lab, "tpm": r["tpm"], "tps_p50": r["decode_tps_p50"], "ttft_p95": r["ttft_p95"]}
     data["charts"] = charts(a)
+    for s in ("base", "best"):  # header line: the full 40-request benchmark, same numbers as the charts
+        r = data["charts"]["bench"]["Chat"][s]
+        data[s]["bench"] = {"label": r["label"], "tpm": r["tpm"], "tps_p50": r["p50"], "ttft_p95": r["ttft95"]}
+        for q in data[s]["requests"]:  # if the server didn't stream running token counts, estimate them from text length
+            ev = q["events"]
+            if ev and any(e[3] is None for e in ev) and q["tokens"]:
+                total = sum(len(e[2]) for e in ev); seen = 0
+                for e in ev:
+                    seen += len(e[2]); e[3] = e[3] or max(1, round(seen / total * q["tokens"]))
+                q["tokens_estimated"] = True
     html = Path("race.template.html").read_text().replace("/*DATA*/null", json.dumps(data))
     Path("race.html").write_text(html)
     print("wrote race.html")
